@@ -1,3 +1,5 @@
+import { ExternalLink } from 'lucide-react';
+import { arcTxUrl } from '../services/arcPayment.js';
 import { formatPoints, formatTime, money, pointsFromRaw, shortAddress } from '../utils/format.js';
 
 function pointsFromOrders(store) {
@@ -10,9 +12,28 @@ function pointsFromOrders(store) {
 
 export default function PointsHistoryPage({ pointsHistory = [], stores = [], scopeLabel = 'Network Analytics' }) {
   const storeRows = stores.map(store => ({ ...store, ...pointsFromOrders(store) }));
-  const totalIssued = storeRows.reduce((sum, store) => sum + store.issued, 0);
-  const totalRedeemed = storeRows.reduce((sum, store) => sum + store.redeemed, 0);
+  const totalIssued = pointsHistory.length
+    ? pointsHistory.filter(row => ['earned', 'earn'].includes(row.type)).reduce((sum, row) => sum + Number(row.points || 0), 0)
+    : storeRows.reduce((sum, store) => sum + store.issued, 0);
+  const totalRedeemed = pointsHistory.length
+    ? Math.abs(pointsHistory.filter(row => ['redeemed', 'redeem'].includes(row.type)).reduce((sum, row) => sum + Number(row.points || 0), 0))
+    : storeRows.reduce((sum, store) => sum + store.redeemed, 0);
   const totalNet = totalIssued - totalRedeemed;
+  const ledgerRows = pointsHistory.filter(row => !stores.length || stores.some(store => store.id === (row.store_id || row.storeId)));
+
+  function transactionLink(txHash) {
+    if (!txHash) return <span className="muted-cell">-</span>;
+    return (
+      <a className="explorer-link compact" href={arcTxUrl(txHash)} target="_blank" rel="noreferrer">
+        {shortAddress(txHash)} <ExternalLink size={12} />
+      </a>
+    );
+  }
+
+  function typeBadge(type = '') {
+    const normalized = type === 'earn' ? 'earned' : type === 'redeem' ? 'redeemed' : type;
+    return <span className={`badge ${normalized === 'earned' ? 'ok' : 'warn'}`}>{normalized}</span>;
+  }
 
   return (
     <section className="page-stack">
@@ -56,20 +77,38 @@ export default function PointsHistoryPage({ pointsHistory = [], stores = [], sco
       <section className="panel full-page-panel">
         <div className="panel-head"><div><p className="eyebrow">Loyalty Ledger</p><h2>Point History</h2></div></div>
         <table className="data-table">
-          <thead><tr><th>No.</th><th>Customer Wallet</th><th>Type</th><th>Points</th><th>Balance After</th><th>Note</th><th>Time</th></tr></thead>
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>Customer Wallet</th>
+              <th>Store</th>
+              <th>Order / Invoice</th>
+              <th>Type</th>
+              <th>Points</th>
+              <th>Balance After</th>
+              <th>Payment Tx</th>
+              <th>Proof Tx</th>
+              <th>Note</th>
+              <th>Time</th>
+            </tr>
+          </thead>
           <tbody>
-            {pointsHistory.map((row, index) => (
+            {ledgerRows.map((row, index) => (
               <tr key={row.id}>
                 <td>{index + 1}</td>
-                <td>{shortAddress(row.customers?.wallet_address || row.customerWallet || '')}</td>
-                <td><span className={`badge ${row.type === 'earn' ? 'ok' : 'warn'}`}>{row.type}</span></td>
+                <td>{shortAddress(row.customerWallet || row.wallet_address || '')}</td>
+                <td>{row.storeName || row.store_name || '-'}</td>
+                <td><strong>{row.invoiceId || row.invoice_id || row.orderId || row.order_id || '-'}</strong></td>
+                <td>{typeBadge(row.type)}</td>
                 <td>{formatPoints(row.points)}</td>
                 <td>{formatPoints(row.balance_after ?? row.balanceAfter)}</td>
+                <td>{transactionLink(row.paymentTxHash || row.payment_tx_hash || row.tx_hash)}</td>
+                <td>{transactionLink(row.proofTxHash || row.proof_tx_hash)}</td>
                 <td>{row.note}</td>
                 <td>{formatTime(row.created_at || row.createdAt)}</td>
               </tr>
             ))}
-            {!pointsHistory.length && <tr><td colSpan="7" className="empty-row">No point transactions yet.</td></tr>}
+            {!ledgerRows.length && <tr><td colSpan="11" className="empty-row">No point transactions yet.</td></tr>}
           </tbody>
         </table>
       </section>

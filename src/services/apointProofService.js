@@ -1,4 +1,4 @@
-import { ensureEvmChain, getInjectedEthereum, isValidEvmAddress } from './evmWallet.js';
+import { ensureEvmChain, getActiveEvmProvider, isValidEvmAddress } from './evmWallet.js';
 import { ARC_TESTNET_CHAIN, arcTxUrl, waitForArcTestnetReceipt } from './arcPayment.js';
 
 const RECORD_PAYMENT_SELECTOR = '0x78102d43';
@@ -67,8 +67,9 @@ export async function recordApointPaymentProof({
   storeWallet,
   amount,
   points,
+  provider,
 }) {
-  const ethereum = getInjectedEthereum();
+  const ethereum = provider || getActiveEvmProvider();
 
   if (!ethereum) {
     throw new Error('No EVM wallet found.');
@@ -79,7 +80,7 @@ export async function recordApointPaymentProof({
   assertAddress(storeWallet, 'store receiver wallet');
   assertNonZeroAddress(APOINT_PAYMENT_PROOF_ADDRESS, 'ApointPaymentProof contract');
 
-  await ensureEvmChain(ARC_TESTNET_CHAIN);
+  await ensureEvmChain(ARC_TESTNET_CHAIN, ethereum);
 
   const txHash = await ethereum.request({
     method: 'eth_sendTransaction',
@@ -99,7 +100,7 @@ export async function recordApointPaymentProof({
     ],
   });
 
-  const receipt = await waitForArcTestnetReceipt(txHash);
+  const receipt = await waitForArcTestnetReceipt(txHash, { provider: ethereum });
 
   return {
     txHash,

@@ -12,7 +12,8 @@ import {
 } from '../services/arcPayment.js';
 import { ensureEvmChain, getActiveEvmProvider, restoreEvmWalletConnection } from '../services/evmWallet.js';
 import { recordApointPaymentProof } from '../services/apointProofService.js';
-import { formatPoints, money, pointsFromRaw, pointsToOnchainUnits, rawFromPoints, redeemablePointsFromRaw, shortAddress } from '../utils/format.js';
+import { hasNetPayV1RegistryConfig, recordNetPayV1Payment } from '../services/netpayV1RegistryService.js';
+import { formatPoints, money, pointsFromRaw, pointsToOnchainUnits, rawFromPoints, rawFromUSDC, redeemablePointsFromRaw, shortAddress } from '../utils/format.js';
 
 function getCheckoutToken() {
   const params = new URLSearchParams(window.location.search);
@@ -60,6 +61,26 @@ function getMetaMaskDappUrl() {
 }
 
 const CHECKOUT_STORAGE_KEY = 'paynet.pendingCheckouts';
+
+function decodeDemoCheckout(token = '') {
+  if (!String(token).startsWith('demo-')) return null;
+
+  try {
+    const encoded = String(token).slice(5).replace(/-/g, '+').replace(/_/g, '/');
+    const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+    const json = decodeURIComponent(escape(window.atob(padded)));
+    const order = JSON.parse(json);
+
+    return {
+      ...order,
+      checkoutToken: token,
+      checkout_token: token,
+      isDemo: true,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function findStoredCheckout(token = '') {
   if (!token || typeof window === 'undefined') return null;
@@ -231,8 +252,20 @@ export default function CustomerCheckoutPage({
 
       try {
         let checkoutFound = false;
+        const demoCheckout = decodeDemoCheckout(token);
 
-        if (hasSupabaseConfig && supabase && token) {
+        if (demoCheckout) {
+          setOrder(demoCheckout);
+          setAvailablePoints(0);
+          setUsePoints(false);
+          setRedeemInput(0);
+          setStatus(demoCheckout.paymentStatus === 'paid' || demoCheckout.status === 'paid' ? 'paid' : 'ready');
+          setTxHash(demoCheckout.txHash || '');
+          setProofTxHash(demoCheckout.proofTxHash || '');
+          checkoutFound = true;
+        }
+
+        if (!checkoutFound && hasSupabaseConfig && supabase && token) {
           const mapped = await loadCheckoutOrder(token);
 
           if (mapped) {
@@ -245,7 +278,7 @@ export default function CustomerCheckoutPage({
             setUsePoints(false);
             setRedeemInput(0);
 
-            if (mapped.paymentStatus === 'paid' || mapped.status === 'paid') {
+            if (['paid', 'confirmed'].includes(mapped.paymentStatus) || mapped.status === 'paid') {
               setStatus('paid');
               setTxHash(mapped.txHash || '');
               setProofTxHash(mapped.proofTxHash || '');
@@ -273,7 +306,7 @@ export default function CustomerCheckoutPage({
             setAvailablePoints(0);
             setUsePoints(false);
             setRedeemInput(0);
-            setStatus(found.paymentStatus === 'paid' || found.status === 'paid' ? 'paid' : 'ready');
+            setStatus(['paid', 'confirmed'].includes(found.paymentStatus) || found.status === 'paid' ? 'paid' : 'ready');
             setTxHash(found.txHash || '');
             setProofTxHash(found.proofTxHash || '');
           }
@@ -516,9 +549,15 @@ export default function CustomerCheckoutPage({
   };
   const checkoutReceiverWallet = order?.receiverWallet || receiverWallet;
   const paymentTokenSymbol = ARC_USDC.symbol;
+  const usesNetPayV1Registry = hasNetPayV1RegistryConfig();
+  const isSnapshotUsdcOrder = order?.paymentMethod === 'usdc_arc' && Number(order?.totalUsdc || 0) > 0;
 
   const subtotal = useMemo(() => {
     if (!order) return 0;
+
+    if (isSnapshotUsdcOrder) {
+      return rawFromUSDC(order.totalUsdc);
+    }
 
     if (Number(order.subtotal || 0) > 0) {
       return Number(order.subtotal || 0);
@@ -529,22 +568,25 @@ export default function CustomerCheckoutPage({
         sum + Number(item.total || item.unitPrice * item.qty || 0),
       0
     );
-  }, [order]);
+  }, [isSnapshotUsdcOrder, order]);
 
-  const taxAmount = Math.round(subtotal * taxRate / 100);
-  const totalBeforePoints = subtotal + taxAmount;
+  const taxAmount = isSnapshotUsdcOrder ? 0 : Number(order?.taxAmount ?? Math.round(subtotal * taxRate / 100));
+  const totalBeforePoints = isSnapshotUsdcOrder ? subtotal : subtotal + taxAmount;
 
   const maxDiscountRaw = Math.floor(totalBeforePoints * 0.2);
-  const maxRedeemPoints = Math.min(availablePoints, redeemablePointsFromRaw(maxDiscountRaw));
-  const safeRedeemInput = Math.max(
+  const maxRedeemPoints = isSnapshotUsdcOrder ? 0 : Math.min(availablePoints, redeemablePointsFromRaw(maxDiscountRaw));
+  const safeRedeemInput = Math.floor(Math.max(
     0,
     Math.min(maxRedeemPoints, Number(redeemInput) || 0)
-  );
+  ));
   const redeemPoints = usePoints ? safeRedeemInput : 0;
 
   const redeemedValue = rawFromPoints(redeemPoints);
   const payable = Math.max(totalBeforePoints - redeemedValue, 0);
-  const earnedPoints = pointsFromRaw(payable);
+  const earnedPoints = isSnapshotUsdcOrder && Number(order?.apointUnits || 0) > 0
+    ? Number(order.apointUnits) / 100
+    : pointsFromRaw(payable);
+  const onchainRedeemPoints = Math.floor(redeemPoints);
 
   useEffect(() => {
     if (!usePoints) {
@@ -564,10 +606,10 @@ export default function CustomerCheckoutPage({
   }
 
   function updateRedeemPoints(value) {
-    const next = Math.max(
+    const next = Math.floor(Math.max(
       0,
       Math.min(maxRedeemPoints, Number(value) || 0)
-    );
+    ));
 
     setRedeemInput(next);
     setUsePoints(next > 0);
@@ -584,6 +626,8 @@ export default function CustomerCheckoutPage({
     setTxHash('');
     setProofTxHash('');
     setStatus('paying');
+
+    let submittedPaymentTxHash = '';
 
     try {
       const wallet = walletConnected && customerWallet && walletChainReady
@@ -627,6 +671,7 @@ export default function CustomerCheckoutPage({
         provider: wallet.provider,
       });
 
+      submittedPaymentTxHash = paymentTxHash;
       setTxHash(paymentTxHash);
 
       const paymentReceipt = await waitForArcTestnetReceipt(paymentTxHash, {
@@ -637,14 +682,28 @@ export default function CustomerCheckoutPage({
         throw new Error('USDC payment reverted. The invoice was not marked as paid.');
       }
 
-      const proof = await recordApointPaymentProof({
-        from: walletAddress,
-        invoiceId: order.code,
-        customerWallet: walletAddress,
-        storeWallet: checkoutReceiverWallet,
-        amount: payable,
-        points: pointsToOnchainUnits(earnedPoints),
-      });
+      const proof = usesNetPayV1Registry
+        ? await recordNetPayV1Payment({
+            from: walletAddress,
+            orderId: order.id || order.code,
+            storeId: getOrderStoreId(order, store) || checkoutStore.name,
+            customerWallet: walletAddress,
+            storeWallet: checkoutReceiverWallet,
+            grossAmount: totalBeforePoints,
+            paidAmount: payable,
+            pointsRedeemed: onchainRedeemPoints,
+            txReference: paymentTxHash,
+            provider: wallet.provider,
+          })
+        : await recordApointPaymentProof({
+            from: walletAddress,
+            invoiceId: order.code,
+            customerWallet: walletAddress,
+            storeWallet: checkoutReceiverWallet,
+            amount: payable,
+            points: pointsToOnchainUnits(earnedPoints),
+            provider: wallet.provider,
+          });
 
       setProofTxHash(proof.txHash);
 
@@ -654,12 +713,16 @@ export default function CustomerCheckoutPage({
           payerWallet: walletAddress,
           txHash: paymentTxHash,
           rawResponse: {
-            mode: 'arc-testnet-usdc-payment-with-apoint-proof',
+            mode: usesNetPayV1Registry
+              ? 'arc-testnet-usdc-payment-with-netpay-v1-registry'
+              : 'arc-testnet-usdc-payment-with-apoint-proof',
             chain_id: ARC_TESTNET_CHAIN.chainIdDecimal,
             network: ARC_TESTNET_CHAIN.code,
             receiver_wallet: checkoutReceiverWallet,
             payable_raw: payable,
-            redeemed_points: redeemPoints,
+            total_usdc: Number(order.totalUsdc || 0) || undefined,
+            apoint_units: Number(order.apointUnits || 0) || undefined,
+            redeemed_points: onchainRedeemPoints,
             redeemed_value_raw: redeemedValue,
             earned_points: earnedPoints,
             proof_points_scale: 10000,
@@ -671,6 +734,7 @@ export default function CustomerCheckoutPage({
             proof_tx_hash: proof.txHash,
             proof_block_number: proof.blockNumber || '',
             proof_contract_address: proof.contractAddress,
+            apoint_ledger_address: proof.pointLedgerAddress || '',
             proof_explorer_url: proof.explorerUrl,
             wallet_customer_id: customer?.id || null,
             wallet_address: walletAddress,
@@ -683,6 +747,15 @@ export default function CustomerCheckoutPage({
       setStatus('paid');
     } catch (error) {
       console.error(error);
+      if (submittedPaymentTxHash) {
+        setTxHash(submittedPaymentTxHash);
+        setStatus('payment_submitted');
+        setErrorMessage(
+          `USDC payment was submitted, but NetPay could not finish confirmation/proof yet: ${error.message || 'Arc Testnet confirmation failed.'} Check the transaction link below and do not pay again unless the transaction failed.`
+        );
+        return;
+      }
+
       setStatus('ready');
       setErrorMessage(error.message || 'Arc Testnet payment failed.');
     }
@@ -813,7 +886,8 @@ export default function CustomerCheckoutPage({
                   availablePoints <= 0 ||
                   status === 'paid' ||
                   status === 'paying' ||
-                  status === 'confirming'
+                  status === 'confirming' ||
+                  status === 'payment_submitted'
                 }
                 checked={usePoints}
                 onChange={event => updateUsePoints(event.target.checked)}
@@ -830,7 +904,7 @@ export default function CustomerCheckoutPage({
                       type="number"
                       min="0"
                       max={maxRedeemPoints}
-                      step="0.0001"
+                      step="1"
                       value={safeRedeemInput}
                       onChange={event => updateRedeemPoints(event.target.value)}
                     />
@@ -843,6 +917,7 @@ export default function CustomerCheckoutPage({
                   type="range"
                   min="0"
                   max={maxRedeemPoints}
+                  step="1"
                   value={safeRedeemInput}
                   onChange={event => updateRedeemPoints(event.target.value)}
                 />
@@ -893,17 +968,20 @@ export default function CustomerCheckoutPage({
                 !walletChainReady ||
                 status === 'paying' ||
                 status === 'confirming' ||
+                status === 'payment_submitted' ||
                 status === 'paid'
               }
               onClick={payWithWallet}
             >
-              {status === 'paying' || status === 'confirming'
+              {status === 'paying' || status === 'confirming' || status === 'payment_submitted'
                 ? <RefreshCw className="spin" size={16} />
                 : <CheckCircle2 size={16} />}
               {status === 'paid'
                 ? 'Payment Confirmed'
                 : status === 'confirming'
                   ? 'Waiting for payment confirmation...'
+                  : status === 'payment_submitted'
+                    ? 'Payment submitted - checking confirmation'
                   : `Pay with ${paymentTokenSymbol}`}
             </button>
           </>
@@ -935,7 +1013,7 @@ export default function CustomerCheckoutPage({
             target="_blank"
             rel="noreferrer"
           >
-            View APoint proof transaction <ExternalLink size={14} />
+            {usesNetPayV1Registry ? 'View NetPay V1 registry transaction' : 'View APoint proof transaction'} <ExternalLink size={14} />
           </a>
         )}
       </section>

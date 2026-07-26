@@ -10,8 +10,8 @@ export const demoState = {
   },
   settings: {
     taxRate: 10,
-    earnRate: '100 USDC paid = 1 point',
-    redeemRate: '1 point = 0.20 USDC discount',
+    earnRate: '1 USDC paid = 1 point',
+    redeemRate: '1 point = 0.01 USDC discount',
     maxRedeem: 'Max 20% of invoice total',
   },
   receiverWallet: DEMO_RECEIVER_WALLET,

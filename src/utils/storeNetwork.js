@@ -136,8 +136,8 @@ const sharedCustomers = [
 
 const commonSettings = {
   taxRate: 10,
-  earnRate: '100 USDC paid = 1 APoint',
-  redeemRate: '1 APoint = 0.20 USDC discount',
+  earnRate: '1 USDC paid = 1 APoint',
+  redeemRate: '1 APoint = 0.01 USDC discount',
   maxRedeem: 'Max 20% of invoice total',
 };
 

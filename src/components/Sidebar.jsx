@@ -1,64 +1,35 @@
 import {
   BarChart3,
-  Boxes,
   Building2,
-  CircleDollarSign,
   History,
   Home,
   Package,
   ReceiptText,
   Settings,
-  ShoppingCart,
-  Star,
   Store,
-  Truck,
   Users,
   UserCog,
-  Warehouse,
 } from 'lucide-react';
 
-function buildNavGroups(isSystemAdmin) {
-  const mainItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: Home },
-    ...(!isSystemAdmin ? [{ key: 'pos', label: 'POS / Checkout', icon: ShoppingCart, tag: 'POS' }] : []),
-    { key: 'orders', label: 'Orders', icon: ReceiptText },
-    { key: 'customers', label: 'Customers', icon: Users },
-    { key: 'staff', label: 'Staff', icon: UserCog },
-  ];
-
+function buildNavGroups() {
   return [
-    ...(isSystemAdmin ? [{
-      label: 'Network',
-      items: [
-        { key: 'admin', label: 'System Admin', icon: Building2, tag: 'HQ' },
-      ],
-    }] : []),
     {
       label: 'Main',
-      items: mainItems,
-    },
-    {
-      label: 'Loyalty',
       items: [
-        { key: 'rewards', label: 'Rewards', icon: Star },
-        { key: 'points', label: 'Points History', icon: History },
-      ],
-    },
-    {
-      label: 'Products & Stock',
-      items: [
-        { key: 'products', label: 'Products', icon: Package },
-        { key: 'warehouse', label: 'Warehouse', icon: Boxes },
-        { key: 'receiving', label: 'Purchase Orders', icon: Truck },
-        { key: 'inventory', label: 'Inventory', icon: Warehouse },
-      ],
-    },
-    {
-      label: 'Reports',
-      items: [
-        { key: 'revenue', label: 'Revenue', icon: CircleDollarSign },
-        { key: 'best-sellers', label: 'Best Sellers', icon: BarChart3 },
+        { key: 'admin', label: 'System Admin', icon: Building2, tag: 'HQ' },
+        { key: 'staff', label: 'Staff', icon: UserCog },
         { key: 'settings', label: 'Settings', icon: Settings },
+      ],
+    },
+    {
+      label: 'Report',
+      items: [
+        { key: 'dashboard', label: 'Dashboard', icon: Home },
+        { key: 'orders', label: 'Order History', icon: ReceiptText },
+        { key: 'customers', label: 'Customers', icon: Users },
+        { key: 'points', label: 'Points History', icon: History },
+        { key: 'products', label: 'Products', icon: Package },
+        { key: 'best-sellers', label: 'Best Sellers', icon: BarChart3 },
       ],
     },
   ];
@@ -71,10 +42,9 @@ export default function Sidebar({
   stores = [],
   selectedStoreId,
   onStoreChange,
-  isSystemAdmin = false,
   isGuest = false,
 }) {
-  const navGroups = isGuest ? [] : buildNavGroups(isSystemAdmin);
+  const navGroups = isGuest ? [] : buildNavGroups();
 
   return (
     <aside className="sidebar">
@@ -88,7 +58,7 @@ export default function Sidebar({
         </div>
       </div>
 
-      {isSystemAdmin && !isGuest && stores.length > 0 && (
+      {!isGuest && stores.length > 0 && (
         <div className="sidebar-store-switcher">
           <span>Active store view</span>
           <select value={selectedStoreId || ''} onChange={event => onStoreChange?.(event.target.value)}>
@@ -109,6 +79,7 @@ export default function Sidebar({
             </button>
           </section>
         )}
+
         {navGroups.map(group => (
           <section className="nav-group" key={group.label}>
             <p>{group.label}</p>

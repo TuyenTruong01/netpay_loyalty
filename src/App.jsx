@@ -13,18 +13,23 @@ import POSPage from './pages/POSPage.jsx';
 import PointsHistoryPage from './pages/PointsHistoryPage.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage.jsx';
-import RevenuePage from './pages/RevenuePage.jsx';
 import RewardsPage from './pages/RewardsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import StaffPage from './pages/StaffPage.jsx';
 import SystemAdminPage from './pages/SystemAdminPage.jsx';
 import WarehousePage from './pages/WarehousePage.jsx';
+import StoreMobilePage from './pages/StoreMobilePage.jsx';
+import CustomerStorefrontPage from './pages/CustomerStorefrontPage.jsx';
+import ExplorePage from './pages/ExplorePage.jsx';
+import StoreMapPage from './pages/StoreMapPage.jsx';
 import { connectEvmWallet } from './services/evmWallet.js';
 import { getPaymentChain } from './chains/index.js';
 import {
   addWarehouseRecord,
   confirmCheckoutPayment,
+  confirmStorefrontManualPayment,
   createCheckoutOrder,
+  createStorefrontOrder,
   createStoreRecord,
   disableStaffRecord,
   loadCheckoutPaymentStatus,
@@ -34,11 +39,13 @@ import {
   updateProductStatusRecord,
   updateStoreOwnerRecord,
   updateStoreRecord,
+  updateStoreLocationRecord,
   updateStoreStatusRecord,
   updateWarehouseStatusRecord,
 } from './services/paynetService.js';
 import { hasSupabaseConfig } from './lib/supabaseClient.js';
-import { pointsFromRaw, rawFromPoints } from './utils/format.js';
+import { pointsFromRaw, rawFromPoints, rawFromUSDC, toUSDC } from './utils/format.js';
+import { apointUnitsFromUsdc, convertLocalToUsdc, localToMinor, minorToLocal } from './services/exchangeRateService.js';
 import {
   applyRoleAccessToStores,
   buildStoreState,
@@ -71,12 +78,45 @@ function ensureStoreProducts(store) {
   return Array.isArray(store?.products) ? store.products : [];
 }
 
+function uniqueText(values = []) {
+  return values
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+}
+
 function slugifyStoreName(name = '') {
   return String(name || 'new-store')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'new-store';
+}
+
+function defaultCountryFields(store = {}) {
+  return {
+    slug: store.slug || slugifyStoreName(store.name || store.id || 'store'),
+    countryCode: store.countryCode || store.country_code || 'VN',
+    countryName: store.countryName || store.country_name || 'Vietnam',
+    currencyCode: store.currencyCode || store.currency_code || 'VND',
+    currencySymbol: store.currencySymbol || store.currency_symbol || 'd',
+    currencyDecimals: Number(store.currencyDecimals ?? store.currency_decimals ?? 0),
+    stateProvince: store.stateProvince || store.state_province || '',
+    city: store.city || 'Da Nang',
+    district: store.district || '',
+    ward: store.ward || '',
+    streetAddress: store.streetAddress || store.street_address || store.branch || '',
+    postalCode: store.postalCode || store.postal_code || '',
+    latitude: store.latitude ?? null,
+    longitude: store.longitude ?? null,
+    timezone: store.timezone || 'Asia/Ho_Chi_Minh',
+    phone: store.phone || '',
+    openingHours: store.openingHours || store.opening_hours || {},
+    mapVisibility: store.mapVisibility ?? store.map_visibility ?? true,
+    isActive: store.isActive ?? store.is_active ?? store.status !== 'disabled',
+    locationSource: store.locationSource || store.location_source || 'custom',
+    administrativeDivisionId: store.administrativeDivisionId || store.administrative_division_id || '',
+  };
 }
 
 const STAFF_ALLOWED_PAGES = ['pos', 'orders', 'customers', 'inventory'];
@@ -92,12 +132,22 @@ const OWNER_ALLOWED_PAGES = [
   'rewards',
   'warehouse',
   'receiving',
-  'revenue',
   'best-sellers',
   'settings',
 ];
-const SYSTEM_ADMIN_ALLOWED_PAGES = ['admin', ...OWNER_ALLOWED_PAGES];
+const SYSTEM_ADMIN_ALLOWED_PAGES = [
+  'admin',
+  'dashboard',
+  'staff',
+  'settings',
+  'orders',
+  'customers',
+  'points',
+  'products',
+  'best-sellers',
+];
 const CHECKOUT_STORAGE_KEY = 'paynet.pendingCheckouts';
+const DEMO_WALLET_LABEL = 'demo-session';
 
 function readStoredCheckouts() {
   try {
@@ -112,14 +162,29 @@ function saveStoredCheckout(order) {
   window.localStorage.setItem(CHECKOUT_STORAGE_KEY, JSON.stringify([order, ...current].slice(0, 80)));
 }
 
+function encodeDemoCheckout(order) {
+  const payload = {
+    ...order,
+    checkoutToken: '',
+  };
+  const json = JSON.stringify(payload);
+  const encoded = window.btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+
+  return `demo-${encoded}`;
+}
+
 export default function App() {
-  const [page, setPage] = useState('admin');
+  const [page, setPage] = useState('dashboard');
   const [query, setQuery] = useState('');
   const [stores, setStores] = useState(() => applyRoleAccessToStores(initialNetworkStores));
   const [networkCustomers, setNetworkCustomers] = useState([]);
   const [networkPointsHistory, setNetworkPointsHistory] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(initialNetworkStores[0]?.id || '');
   const [connected, setConnected] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
   const [currentWallet, setCurrentWallet] = useState('');
   const [dbMessage, setDbMessage] = useState('Frontend multi-store mode. Supabase schema can be connected after the UI is approved.');
 
@@ -133,6 +198,7 @@ export default function App() {
   const [checkoutPayment, setCheckoutPayment] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('idle');
   const [editingProduct, setEditingProduct] = useState(null);
+  const [mobileCart, setMobileCart] = useState([]);
 
   async function reloadNetwork() {
     if (!hasSupabaseConfig) {
@@ -208,21 +274,28 @@ export default function App() {
     [stores, currentWallet]
   );
 
-  const isSystemAdmin = connected && roleContext.roleKey === 'system_admin';
-  const isGuest = connected && roleContext.roleKey === 'guest';
+  const isSystemAdmin = connected && !demoMode && roleContext.roleKey === 'system_admin';
+  const isGuest = connected && !demoMode && roleContext.roleKey === 'guest';
   const roleStore = roleContext.store;
   const allowedPages = useMemo(() => {
+    if (demoMode) return ['dashboard', 'pos', 'orders', 'customers'];
     if (isSystemAdmin) return SYSTEM_ADMIN_ALLOWED_PAGES;
     if (isGuest || !connected) return [];
     if (isStoreOwnerRole(roleContext.roleKey)) return OWNER_ALLOWED_PAGES;
     return STAFF_ALLOWED_PAGES;
-  }, [connected, isGuest, isSystemAdmin, roleContext.roleKey]);
+  }, [connected, demoMode, isGuest, isSystemAdmin, roleContext.roleKey]);
 
   useEffect(() => {
+    if (demoMode) {
+      setPage(current => ['dashboard', 'pos', 'orders', 'customers'].includes(current) ? current : 'pos');
+      setSelectedStoreId(current => current || firstActiveStore(stores)?.id || '');
+      return;
+    }
+
     if (!connected || !currentWallet) return;
 
     if (roleContext.roleKey === 'system_admin') {
-      setPage(current => current || 'admin');
+      setPage(current => current === 'dashboard' ? 'admin' : current || 'admin');
       setSelectedStoreId(current => current || firstActiveStore(stores)?.id || '');
       return;
     }
@@ -239,14 +312,14 @@ export default function App() {
     if (roleContext.roleKey === 'guest') {
       setPage('dashboard');
     }
-  }, [connected, currentWallet, roleContext.roleKey, roleStore?.id, stores]);
+  }, [connected, currentWallet, demoMode, roleContext.roleKey, roleStore?.id, stores]);
 
   useEffect(() => {
-    if (!connected || isGuest || !allowedPages.length) return;
+    if (!connected || demoMode || isGuest || !allowedPages.length) return;
     if (!allowedPages.includes(page)) {
       setPage(allowedPages[0]);
     }
-  }, [allowedPages, connected, isGuest, page]);
+  }, [allowedPages, connected, demoMode, isGuest, page]);
 
   const activeStore = useMemo(() => {
     if (!stores.length) return null;
@@ -261,12 +334,16 @@ export default function App() {
 
   const staffMembers = data.staffMembers || [];
   const activeStaff = roleContext.member;
-  const displayStaff = activeStaff || { name: 'Not connected', role: 'Guest', roleKey: 'guest', wallet: currentWallet, avatar: 'U' };
+  const displayStaff = demoMode
+    ? { name: 'Demo Mode', role: 'Demo', roleKey: 'demo', wallet: 'Local demo session', avatar: 'DM' }
+    : activeStaff || { name: 'Not connected', role: 'Guest', roleKey: 'guest', wallet: currentWallet, avatar: 'U' };
   const isStoreOwner = isStoreOwnerRole(roleContext.roleKey);
   const canManageStore = isSystemAdmin || isStoreOwner;
-  const canUsePos = connected && Boolean(activeStore) && activeStore.status !== 'disabled' && roleContext.roleKey !== 'guest';
+  const canUsePos = demoMode || (connected && Boolean(activeStore) && activeStore.status !== 'disabled' && roleContext.roleKey !== 'guest');
   const isManager = canManageStore;
-  const posLockMessage = !connected
+  const posLockMessage = demoMode
+    ? ''
+    : !connected
     ? 'Connect or preview an approved wallet to create invoices.'
     : activeStore?.status === 'disabled'
       ? 'This store is disabled by the system admin.'
@@ -358,7 +435,7 @@ export default function App() {
 
     let order = null;
 
-    if (hasSupabaseConfig) {
+    if (hasSupabaseConfig && !demoMode) {
       try {
         order = await createCheckoutOrder({
           store: activeStore,
@@ -386,10 +463,11 @@ export default function App() {
       };
     }
 
-    const pendingOrder = {
+    let pendingOrder = {
       id: order.order_id,
       code: order.order_code,
       checkoutToken: order.checkout_token,
+      isDemo: demoMode || String(order.order_id).startsWith('demo'),
       storeId: activeStore.id,
       storeName: activeStore.name,
       storeBranch: activeStore.branch,
@@ -417,6 +495,20 @@ export default function App() {
       })),
     };
 
+    if (demoMode) {
+      const demoToken = encodeDemoCheckout(pendingOrder);
+      order = {
+        ...order,
+        checkout_token: demoToken,
+      };
+      pendingOrder = {
+        ...pendingOrder,
+        id: order.order_id,
+        checkoutToken: demoToken,
+        checkout_token: demoToken,
+      };
+    }
+
     saveStoredCheckout(pendingOrder);
     setCheckout(order);
     setCheckoutPayment(null);
@@ -429,7 +521,7 @@ export default function App() {
     if (!checkout) return;
     setPaymentStatus('checking');
 
-    if (hasSupabaseConfig && checkout.order_id && !String(checkout.order_id).startsWith('demo')) {
+    if (hasSupabaseConfig && !demoMode && checkout.order_id && !String(checkout.order_id).startsWith('demo')) {
       try {
         await confirmCheckoutPayment({
           orderId: checkout.order_id,
@@ -476,20 +568,23 @@ export default function App() {
       status: 'paid',
       paymentStatus: 'paid',
       paymentMethod: 'arc',
+      isDemo: demoMode,
       txHash: `0xmock${Date.now().toString(16)}`,
       createdAt: new Date().toISOString(),
       paidAt: new Date().toISOString(),
       items: cartRows.map(row => ({ id: row.id, productId: row.id, name: row.name, sku: row.sku, qty: row.qty, unitPrice: row.price, total: row.price * row.qty })),
     };
 
-    updateActiveStore(store => ({
-      ...store,
-      orders: [paidOrder, ...(store.orders || [])],
-      products: store.products.map(product => {
-        const cartItem = cartRows.find(item => item.id === product.id);
-        return cartItem ? { ...product, stock: Math.max(0, Number(product.stock || 0) - Number(cartItem.qty || 0)) } : product;
-      }),
-    }));
+    if (!demoMode) {
+      updateActiveStore(store => ({
+        ...store,
+        orders: [paidOrder, ...(store.orders || [])],
+        products: store.products.map(product => {
+          const cartItem = cartRows.find(item => item.id === product.id);
+          return cartItem ? { ...product, stock: Math.max(0, Number(product.stock || 0) - Number(cartItem.qty || 0)) } : product;
+        }),
+      }));
+    }
 
     saveStoredCheckout(paidOrder);
 
@@ -505,6 +600,9 @@ export default function App() {
       ...store,
       products: store.products.map(product => product.id === productId ? { ...product, active: false } : product),
     }));
+    if (hasSupabaseConfig) {
+      updateProductStatusRecord(productId, 'inactive').then(reloadNetwork).catch(error => alert(error.message || error));
+    }
   }
 
   async function saveProduct(product) {
@@ -525,11 +623,14 @@ export default function App() {
 
     updateActiveStore(store => {
       const exists = store.products.some(item => item.id === id);
+      const nextProducts = exists
+        ? store.products.map(item => item.id === id ? normalized : item)
+        : [normalized, ...store.products];
+
       return {
         ...store,
-        products: exists
-          ? store.products.map(item => item.id === id ? normalized : item)
-          : [normalized, ...store.products],
+        categories: uniqueText(['All', ...(store.categories || []), normalized.category]),
+        products: nextProducts,
       };
     });
     setEditingProduct(null);
@@ -597,6 +698,7 @@ export default function App() {
   async function handleConnectWallet() {
     try {
       const wallet = await connectEvmWallet(getPaymentChain(connectChainCode(activeStore)));
+      setDemoMode(false);
       setCurrentWallet(wallet.address);
       setConnected(true);
     } catch (error) {
@@ -605,8 +707,23 @@ export default function App() {
     }
   }
 
+  function handleStartDemo() {
+    setDemoMode(true);
+    setConnected(true);
+    setCurrentWallet(DEMO_WALLET_LABEL);
+    setPage('pos');
+    setSelectedStoreId(current => current || firstActiveStore(stores)?.id || '');
+    setInvoiceActive(false);
+    setCart([]);
+    setCheckout(null);
+    setCheckoutPayment(null);
+    setPaymentStatus('idle');
+    setPointsUsed(0);
+  }
+
   function handleSignOut() {
     setConnected(false);
+    setDemoMode(false);
     setCurrentWallet('');
     setPage('admin');
     setInvoiceActive(false);
@@ -781,6 +898,210 @@ export default function App() {
     }));
   }
 
+  function handleDeleteInventoryItem(productId) {
+    if (!canManageStore) return alert('Only the system admin or store owner can delete inventory items.');
+    if (!confirm('Delete this inventory row from the current view? The product catalog record will be kept.')) return;
+
+    updateActiveStore(store => ({
+      ...store,
+      products: store.products.map(product => product.id === productId
+        ? { ...product, inventoryHidden: true, stock: 0, min: 0, warehouseId: '', warehouse: '' }
+        : product),
+    }));
+  }
+
+  function mobileStoreView(store) {
+    if (!store) return null;
+    const geo = defaultCountryFields(store);
+    return {
+      ...store,
+      ...geo,
+      paymentMethods: store.paymentMethods?.length ? store.paymentMethods : [
+        { method: 'usdc_arc', isEnabled: true, arcWalletAddress: store.receiverWallet || store.ownerWallet || '' },
+        { method: 'bank_transfer', isEnabled: true, bankName: 'Store bank', bankAccountName: store.name || '', bankAccountNumber: '' },
+        { method: 'cash', isEnabled: true, cashInstructions: 'Pay at counter. Store staff confirms after receiving cash.' },
+      ],
+      products: ensureStoreProducts(store).map(product => ({
+        ...product,
+        localPriceMinor: Number(product.localPriceMinor ?? product.price ?? 0),
+        localPrice: Number(product.localPrice ?? minorToLocal(product.localPriceMinor ?? product.price ?? 0, geo.currencyDecimals)),
+        currencyCode: product.currencyCode || geo.currencyCode,
+        priceUsdc: product.priceUsdc === null || product.priceUsdc === undefined ? null : Number(product.priceUsdc),
+        listedQuantity: Number(product.listedQuantity ?? product.stock ?? 0),
+        visible: product.visible ?? product.active !== false,
+      })),
+      orders: store.orders || [],
+    };
+  }
+
+  function saveMobileProduct(product) {
+    if (!activeStore) return;
+    const geo = defaultCountryFields(activeStore);
+    const id = product.id || `${activeStore.id}-mobile-${Date.now()}`;
+    const localPriceMinor = Number(product.localPriceMinor ?? localToMinor(product.localPrice ?? 0, geo.currencyDecimals));
+    const normalized = {
+      ...product,
+      id,
+      price: localPriceMinor,
+      localPriceMinor,
+      localPrice: minorToLocal(localPriceMinor, geo.currencyDecimals),
+      currencyCode: geo.currencyCode,
+      priceUsdc: product.priceUsdc === null || product.priceUsdc === undefined ? null : Number(product.priceUsdc || 0),
+      stock: Number(product.listedQuantity || 0),
+      listedQuantity: Number(product.listedQuantity || 0),
+      active: product.visible !== false,
+      visible: product.visible !== false,
+      status: product.visible === false ? 'inactive' : 'active',
+    };
+    updateActiveStore(store => {
+      const exists = ensureStoreProducts(store).some(item => item.id === id);
+      return {
+        ...store,
+        products: exists
+          ? ensureStoreProducts(store).map(item => item.id === id ? { ...item, ...normalized } : item)
+          : [normalized, ...ensureStoreProducts(store)],
+      };
+    });
+  }
+
+  function deleteMobileProduct(productId) {
+    if (!activeStore) return;
+    updateActiveStore(store => ({
+      ...store,
+      products: ensureStoreProducts(store).filter(item => item.id !== productId),
+    }));
+  }
+
+  async function updateMobileStore(patch) {
+    if (!activeStore) return;
+    updateActiveStore(store => ({ ...store, ...patch }));
+    if (hasSupabaseConfig && patch?.id) {
+      try {
+        await updateStoreLocationRecord(patch.id, patch);
+        await reloadNetwork();
+      } catch (error) {
+        alert(error.message || 'Cannot save store location.');
+      }
+    }
+  }
+
+  async function placeMobileOrder(storeForOrder, paymentMethod, pointAmount = 0, snapshot = {}) {
+    const orderStore = storeForOrder || activeStore;
+    if (!orderStore || !mobileCart.length) return null;
+    const geo = defaultCountryFields(orderStore);
+    const normalizedMethod = paymentMethod === 'usdc' ? 'usdc_arc' : paymentMethod === 'bank' ? 'bank_transfer' : paymentMethod;
+    const subtotalLocal = Number(snapshot.subtotal_local ?? mobileCart.reduce((sum, line) => sum + Number(line.localPriceMinor ?? line.price ?? 0) * Number(line.quantity || 0), 0));
+    const discountLocal = Number(snapshot.discount_local ?? 0);
+    const taxLocal = Number(snapshot.tax_local ?? 0);
+    const totalLocal = Number(snapshot.total_local ?? Math.max(0, subtotalLocal + taxLocal - discountLocal));
+    const rate = Number(snapshot.exchange_rate || 0);
+    const totalUsdc = Number(snapshot.total_usdc ?? (rate > 0 ? convertLocalToUsdc(minorToLocal(totalLocal, geo.currencyDecimals), rate) : 0));
+    const apointUnits = Number(snapshot.apoint_units ?? apointUnitsFromUsdc(totalUsdc));
+    const apointEligible = snapshot.apoint_eligible !== false && totalUsdc > 0;
+    const pointDiscount = normalizedMethod === 'usdc_arc' ? Number(pointAmount || 0) : 0;
+    if (hasSupabaseConfig) {
+      const created = await createStorefrontOrder({
+        store: orderStore,
+        cartRows: mobileCart,
+        paymentMethod: normalizedMethod,
+        customerWallet: snapshot.customer_wallet || '',
+        pointsUsed: pointDiscount,
+        snapshot: {
+          ...snapshot,
+          local_currency: geo.currencyCode,
+          subtotal_local: subtotalLocal,
+          discount_local: discountLocal,
+          tax_local: taxLocal,
+          total_local: totalLocal,
+          total_usdc: totalUsdc,
+          apoint_units: apointUnits,
+          apoint_eligible: apointEligible,
+        },
+      });
+      const order = {
+        id: created.order_id,
+        code: created.order_code,
+        checkoutToken: created.checkout_token,
+        createdAt: new Date().toISOString(),
+        items: mobileCart,
+        paymentMethod: normalizedMethod,
+        localCurrency: geo.currencyCode,
+        subtotalLocal,
+        discountLocal,
+        taxLocal,
+        totalLocal,
+        exchangeRate: rate || null,
+        exchangeRateBase: snapshot.exchange_rate_base || 'USDC',
+        exchangeRateQuote: snapshot.exchange_rate_quote || geo.currencyCode,
+        exchangeRateProvider: snapshot.exchange_rate_provider || '',
+        exchangeRateFetchedAt: snapshot.exchange_rate_fetched_at || '',
+        exchangeRateExpiresAt: snapshot.exchange_rate_expires_at || '',
+        subtotal: subtotalLocal,
+        pointsUsed: normalizedMethod === 'usdc_arc' ? pointDiscount : 0,
+        pointsDiscount: pointDiscount,
+        total: totalUsdc,
+        totalUsdc,
+        apointEligible,
+        apointUnits,
+        apointAwarded: false,
+        paymentStatus: created.payment_status,
+        status: created.status,
+      };
+      setStores(current => current.map(store => store.id === orderStore.id ? { ...store, orders: [order, ...(store.orders || [])] } : store));
+      setMobileCart([]);
+      return order;
+    }
+
+    const order = {
+      id: `ORD-${String(Date.now()).slice(-6)}`,
+      code: `ORD-${String(Date.now()).slice(-6)}`,
+      createdAt: new Date().toISOString(),
+      items: mobileCart,
+      paymentMethod: normalizedMethod,
+      localCurrency: geo.currencyCode,
+      subtotalLocal,
+      discountLocal,
+      taxLocal,
+      totalLocal,
+      exchangeRate: rate || null,
+      exchangeRateBase: snapshot.exchange_rate_base || 'USDC',
+      exchangeRateQuote: snapshot.exchange_rate_quote || geo.currencyCode,
+      exchangeRateProvider: snapshot.exchange_rate_provider || '',
+      exchangeRateFetchedAt: snapshot.exchange_rate_fetched_at || '',
+      exchangeRateExpiresAt: snapshot.exchange_rate_expires_at || '',
+      subtotal: subtotalLocal,
+      pointsUsed: normalizedMethod === 'usdc_arc' ? pointDiscount : 0,
+      pointsDiscount: pointDiscount,
+      total: totalUsdc,
+      totalUsdc,
+      apointEligible,
+      apointUnits,
+      apointAwarded: false,
+      paymentStatus: normalizedMethod === 'usdc_arc' ? 'pending' : 'awaiting_confirmation',
+      status: normalizedMethod === 'usdc_arc' ? 'awaiting_payment' : 'awaiting_confirmation',
+    };
+    setStores(current => current.map(store => store.id === orderStore.id ? { ...store, orders: [order, ...(store.orders || [])] } : store));
+    setMobileCart([]);
+    return order;
+  }
+
+  async function confirmMobileOrder(orderId, actorWallet) {
+    if (!orderId || !actorWallet) return null;
+    if (hasSupabaseConfig) {
+      const result = await confirmStorefrontManualPayment({ orderId, actorWallet, note: 'Confirmed in store mobile' });
+      await reloadNetwork();
+      return result;
+    }
+    const paidAt = new Date().toISOString();
+    updateActiveStore(store => ({
+      ...store,
+      orders: (store.orders || []).map(order => order.id === orderId
+        ? { ...order, status: 'paid', paymentStatus: 'confirmed', paidAt, apointAwarded: true }
+        : order),
+    }));
+    return { status: 'confirmed' };
+  }
+
   function renderPage() {
     if (isGuest) {
       return (
@@ -837,12 +1158,12 @@ export default function App() {
     if (page === 'orders') return <OrdersPage {...common} />;
     if (page === 'customers') return <CustomersPage customers={customers} />;
     if (page === 'staff') return <StaffPage staffMembers={safeStaffMembers} isManager={canManageStore} currentWallet={currentWallet} onSaveStaff={saveStaffMember} onDisableStaff={disableStaffMember} />;
-    if (page === 'products') return <ProductsPage products={data.products} setEditingProduct={setEditingProduct} canManage={canManageStore} onUpdateProductStatus={handleUpdateProductStatus} />;
-    if (page === 'inventory') return <InventoryPage products={data.products} warehouses={data.warehouses || []} inventory={data.inventory || []} canManage={canManageStore} onAddInventoryProduct={handleAddInventoryProduct} onUpdateInventoryWarehouse={handleUpdateInventoryWarehouse} />;
+    if (page === 'products') return <ProductsPage products={data.products} setEditingProduct={setEditingProduct} canManage={canManageStore} onUpdateProductStatus={handleUpdateProductStatus} onDeleteProduct={deleteProduct} />;
+    if (page === 'inventory') return <InventoryPage products={data.products} warehouses={data.warehouses || []} inventory={data.inventory || []} canManage={canManageStore} onAddInventoryProduct={handleAddInventoryProduct} onUpdateInventoryWarehouse={handleUpdateInventoryWarehouse} onDeleteInventoryItem={handleDeleteInventoryItem} />;
     if (page === 'points') {
       return (
         <PointsHistoryPage
-          pointsHistory={data.pointsHistory}
+          pointsHistory={isSystemAdmin ? networkPointsHistory : data.pointsHistory}
           stores={visibleStores}
           scopeLabel={isSystemAdmin ? 'Network Analytics' : 'Store Analytics'}
         />
@@ -851,7 +1172,6 @@ export default function App() {
     if (page === 'rewards') return <RewardsPage settings={data.settings || {}} />;
     if (page === 'warehouse') return <WarehousePage warehouses={data.warehouses || []} inventory={data.inventory || []} canManage={canManageStore} onAddWarehouse={handleAddWarehouse} onUpdateWarehouseStatus={handleUpdateWarehouseStatus} />;
     if (page === 'receiving') return <PurchaseOrdersPage purchaseOrders={data.purchaseOrders || []} />;
-    if (page === 'revenue') return <RevenuePage orders={activeStore?.orders || []} />;
     if (page === 'best-sellers') return <BestSellersPage orders={activeStore?.orders || []} products={common.products} />;
     if (page === 'settings') return <SettingsPage store={data.store} receiverWallet={safeReceiverWallet} settings={data.settings || {}} canViewWallet={!isGuest} />;
     if (page === 'pos') {
@@ -902,6 +1222,83 @@ export default function App() {
     return <DashboardPage {...common} />;
   }
 
+  const mobileStores = stores.map(mobileStoreView).filter(Boolean);
+  const slugFromPath = decodeURIComponent(window.location.pathname.replace(/^\/s\//, '').split('/')[0] || '');
+  const storeFromSlug = mobileStores.find(store => store.slug === slugFromPath || String(store.id) === slugFromPath);
+  const mobileStore = storeFromSlug || mobileStoreView(activeStore || firstActiveStore(stores));
+
+  if (window.location.pathname.startsWith('/explore')) {
+    return (
+      <>
+        <div className="mobile-demo-toolbar">
+          <a href="/">Admin</a>
+          <strong>Explore</strong>
+          <a href="/map">Map</a>
+          <a href="/store-mobile">Store Mobile</a>
+        </div>
+        <ExplorePage stores={mobileStores} onSelectStore={setSelectedStoreId} />
+      </>
+    );
+  }
+
+  if (window.location.pathname.startsWith('/map')) {
+    return (
+      <>
+        <div className="mobile-demo-toolbar">
+          <a href="/">Admin</a>
+          <a href="/explore">Explore</a>
+          <strong>Map</strong>
+          <a href="/shop">Customer</a>
+        </div>
+        <StoreMapPage stores={mobileStores} onSelectStore={setSelectedStoreId} />
+      </>
+    );
+  }
+
+  if (window.location.pathname.startsWith('/store-mobile')) {
+    return (
+      <>
+        <div className="mobile-demo-toolbar">
+          <a href="/">Admin</a>
+          <strong>Store Mobile</strong>
+          <a href="/explore">Explore</a>
+          <a href="/shop">Customer</a>
+        </div>
+        <StoreMobilePage
+          store={mobileStore}
+          stores={mobileStores}
+          onSelectStore={setSelectedStoreId}
+          onSaveProduct={saveMobileProduct}
+          onDeleteProduct={deleteMobileProduct}
+          onUpdateStore={updateMobileStore}
+          onConfirmOrder={confirmMobileOrder}
+        />
+      </>
+    );
+  }
+
+  if (window.location.pathname.startsWith('/shop') || window.location.pathname.startsWith('/store/') || window.location.pathname.startsWith('/s/')) {
+    return (
+      <>
+        <div className="mobile-demo-toolbar">
+          <a href="/">Admin</a>
+          <a href="/explore">Explore</a>
+          <a href="/map">Map</a>
+          <a href="/store-mobile">Store Mobile</a>
+          <strong>Customer</strong>
+        </div>
+        <CustomerStorefrontPage
+          store={mobileStore}
+          stores={mobileStores}
+          onSelectStore={setSelectedStoreId}
+          cart={mobileCart}
+          setCart={setMobileCart}
+          onPlaceOrder={(paymentMethod, pointAmount, snapshot) => placeMobileOrder(mobileStore, paymentMethod, pointAmount, snapshot)}
+        />
+      </>
+    );
+  }
+
   if (window.location.pathname.startsWith('/checkout')) {
     return (
       <CustomerCheckoutPage
@@ -924,6 +1321,8 @@ export default function App() {
         onStoreChange={setSelectedStoreId}
         isSystemAdmin={isSystemAdmin}
         isGuest={isGuest}
+        connected={connected}
+        demoMode={demoMode}
       />
       <main className="main-shell">
         <Header
@@ -931,12 +1330,13 @@ export default function App() {
           setQuery={setQuery}
           connected={connected}
           onConnect={handleConnectWallet}
+          onDemo={handleStartDemo}
           onSignOut={handleSignOut}
           staff={displayStaff}
           currentWallet={currentWallet}
           isManager={isManager}
           network={data.store.network}
-          roleLabel={roleContext.label}
+          roleLabel={demoMode ? 'Demo Mode: local checkout preview' : roleContext.label}
         />
         <StatusBanner message={dbMessage} onReload={reloadNetwork} />
         <div className="content-shell">
@@ -948,6 +1348,9 @@ export default function App() {
         <ProductModal
           product={editingProduct}
           categories={data.categories}
+          units={uniqueText(data.products.map(product => product.unit || 'unit'))}
+          usedCategories={uniqueText(data.products.map(product => product.category))}
+          usedUnits={uniqueText(data.products.map(product => product.unit || 'unit'))}
           onClose={() => setEditingProduct(null)}
           onSave={saveProduct}
         />

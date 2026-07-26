@@ -1,4 +1,4 @@
-import { Edit3, Plus } from 'lucide-react';
+import { Edit3, Plus, Trash2 } from 'lucide-react';
 import { money, shortAddress } from '../utils/format.js';
 
 const productStatuses = [
@@ -18,6 +18,7 @@ export default function ProductsPage({
   setEditingProduct,
   canManage = false,
   onUpdateProductStatus,
+  onDeleteProduct,
 }) {
   return (
     <section className="panel full-page-panel">
@@ -72,7 +73,16 @@ export default function ProductsPage({
                     <span className={`badge ${statusBadge(status)}`}>{productStatuses.find(item => item.value === status)?.label || status}</span>
                   )}
                 </td>
-                <td>{canManage ? <button type="button" className="small-action" onClick={() => setEditingProduct(product)}><Edit3 size={14} /> Edit</button> : <span className="muted-cell">View only</span>}</td>
+                <td>
+                  {canManage ? (
+                    <div className="action-cell">
+                      <button type="button" className="small-action" onClick={() => setEditingProduct(product)}><Edit3 size={14} /> Edit</button>
+                      <button type="button" className="small-action danger" onClick={() => onDeleteProduct?.(product.id)}><Trash2 size={14} /> Delete</button>
+                    </div>
+                  ) : (
+                    <span className="muted-cell">View only</span>
+                  )}
+                </td>
               </tr>
             );
           })}

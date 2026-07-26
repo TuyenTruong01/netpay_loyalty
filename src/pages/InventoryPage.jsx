@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { money } from '../utils/format.js';
 
@@ -9,12 +9,13 @@ export default function InventoryPage({
   canManage = false,
   onAddInventoryProduct,
   onUpdateInventoryWarehouse,
+  onDeleteInventoryItem,
 }) {
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState({ productId: '', warehouseId: '', quantity: 0, min: 0 });
 
   const activeWarehouses = warehouses.filter(warehouse => (warehouse.status || (warehouse.active === false ? 'inactive' : 'active')) === 'active');
-  const rows = inventory?.length ? inventory : products.map(product => ({
+  const rows = (inventory?.length ? inventory : products.map(product => ({
     id: product.id,
     productId: product.id,
     name: product.name,
@@ -28,7 +29,8 @@ export default function InventoryPage({
     active: product.active,
     status: product.status || (product.active === false ? 'inactive' : 'active'),
     emoji: product.emoji,
-  }));
+    inventoryHidden: product.inventoryHidden,
+  }))).filter(item => item.inventoryHidden !== true);
 
   const addableProducts = useMemo(
     () => products.filter(product => !rows.some(row => row.productId === product.id && row.warehouseId === draft.warehouseId)),
@@ -85,6 +87,7 @@ export default function InventoryPage({
             <th>Minimum Stock</th>
             <th>Warehouse</th>
             <th>Alert</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -109,9 +112,22 @@ export default function InventoryPage({
                 ) : item.warehouse}
               </td>
               <td><span className={`badge ${Number(item.quantity) <= Number(item.min) ? 'warn' : 'ok'}`}>{Number(item.quantity) <= Number(item.min) ? 'Reorder' : 'OK'}</span></td>
+              <td>
+                {canManage ? (
+                  <button
+                    type="button"
+                    className="small-action danger"
+                    onClick={() => onDeleteInventoryItem?.(item.productId, item.warehouseId)}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                ) : (
+                  <span className="muted-cell">View only</span>
+                )}
+              </td>
             </tr>
           ))}
-          {!rows.length && <tr><td colSpan="9" className="empty-row">No stock records found.</td></tr>}
+          {!rows.length && <tr><td colSpan="10" className="empty-row">No stock records found.</td></tr>}
         </tbody>
       </table>
     </section>

@@ -7,6 +7,7 @@ const ERC20_TRANSFER_SELECTOR = '0xa9059cbb';
 export const ARC_TESTNET_CHAIN = {
   ...arcTestnet,
   chainIdDecimal: Number(import.meta.env?.VITE_ARC_TESTNET_CHAIN_ID || arcTestnet.chainIdDecimal),
+  rpcUrls: [import.meta.env?.VITE_ARC_TESTNET_RPC_URL || arcTestnet.rpcUrls[0]],
 };
 
 export const ARC_USDC = {

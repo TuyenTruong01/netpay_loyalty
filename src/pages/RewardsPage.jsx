@@ -1,8 +1,8 @@
 import { money } from '../utils/format.js';
 
 export default function RewardsPage({ settings }) {
-  const earnRate = settings?.earnRate || '100 USDC paid = 1 point';
-  const redeemRate = settings?.redeemRate || '1 point = 0.20 USDC discount';
+  const earnRate = settings?.earnRate || '1 USDC paid = 1 point';
+  const redeemRate = settings?.redeemRate || '1 point = 0.01 USDC discount';
   const maxRedeem = settings?.maxRedeem || 'Max 20% of invoice total';
 
   return (
