@@ -70,7 +70,7 @@ export default function SystemAdminPage({
     <section className="page-stack">
       <section className="admin-hero">
         <div>
-          <p className="eyebrow">Paynet Network Console</p>
+          <p className="eyebrow">Paynet Loyalty Network Console</p>
           <h1>Multi-store loyalty operations</h1>
           <p>
             Manage every participating store, owner wallet, operating status, and shared APoint rules from one admin view.

@@ -17,7 +17,7 @@ export default function Header({
   roleLabel,
 }) {
   const displayWallet = currentWallet || staff?.wallet || '';
-  const staffName = staff?.name || (isManager ? 'Store Manager' : 'Paynet Staff');
+  const staffName = staff?.name || (isManager ? 'Store Manager' : 'Paynet Loyalty Staff');
   const selectedNetwork = paymentChains.some(chain => chain.label === network) ? network : 'Arc Testnet';
 
   return (

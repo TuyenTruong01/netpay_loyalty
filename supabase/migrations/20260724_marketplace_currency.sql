@@ -1,4 +1,4 @@
--- NetPay marketplace, local currency pricing, payment confirmation, and APoint units.
+-- Paynet Loyalty marketplace, local currency pricing, payment confirmation, and APoint units.
 -- Run this in Supabase SQL editor after the original netpay_v1_schema.sql.
 
 create table if not exists countries (

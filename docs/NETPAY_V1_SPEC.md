@@ -1,17 +1,17 @@
-# NETPAY V1 SPEC
+# Paynet Loyalty V1 SPEC
 
 ## 1. Project Overview
 
-**Project name:** NetPay Loyalty  
+**Project name:** Paynet Loyalty  
 **Track:** DeFi — Payments and Fintech Infrastructure  
 **Target network:** Arc  
 **Primary settlement asset:** USDC  
 **Loyalty system:** APoint on-chain  
 **Primary users:** System Admin, Store Owner, Customer
 
-NetPay Loyalty is a mobile-first stablecoin commerce network for real-world merchants.
+Paynet Loyalty is a mobile-first stablecoin commerce network for real-world merchants.
 
-A merchant does not need to upload their entire physical inventory. For example, a store may have 1,000 products in its existing inventory system but publish only 100 selected products to NetPay.
+A merchant does not need to upload their entire physical inventory. For example, a store may have 1,000 products in its existing inventory system but publish only 100 selected products to Paynet Loyalty.
 
 Customers access a store through a QR code or direct link, browse the selected products, place an order, and choose a payment method.
 
@@ -23,17 +23,17 @@ Only USDC payments on Arc are eligible to earn and redeem APoint.
 
 ### English
 
-> NetPay Loyalty is a mobile-first stablecoin commerce network for real-world merchants. Stores publish only the products they want to sell through a QR storefront, receive direct USDC payments on Arc, and reward customers with universal on-chain APoint.
+> Paynet Loyalty is a mobile-first stablecoin commerce network for real-world merchants. Stores publish only the products they want to sell through a QR storefront, receive direct USDC payments on Arc, and reward customers with universal on-chain APoint.
 
 ### Vietnamese
 
-> NetPay Loyalty giúp cửa hàng thực tế lựa chọn một phần hàng hóa để đưa lên cửa hàng QR trên điện thoại, nhận thanh toán USDC trực tiếp trên Arc và thưởng APoint on-chain dùng chung trong toàn hệ sinh thái.
+> Paynet Loyalty giúp cửa hàng thực tế lựa chọn một phần hàng hóa để đưa lên cửa hàng QR trên điện thoại, nhận thanh toán USDC trực tiếp trên Arc và thưởng APoint on-chain dùng chung trong toàn hệ sinh thái.
 
 ---
 
-## 3. Why NetPay Fits the DeFi Track
+## 3. Why Paynet Loyalty Fits the DeFi Track
 
-NetPay belongs to:
+Paynet Loyalty belongs to:
 
 - Stablecoin payments
 - Merchant settlement
@@ -41,7 +41,7 @@ NetPay belongs to:
 - Programmable loyalty
 - On-chain payment verification
 
-NetPay is not positioned as a full POS, ERP, accounting, or warehouse-management platform.
+Paynet Loyalty is not positioned as a full POS, ERP, accounting, or warehouse-management platform.
 
 Arc is used because the project depends on:
 
@@ -125,12 +125,12 @@ The store may:
 - Enter barcode when applicable
 - Choose product category
 - Enter selling price
-- Enter available quantity for NetPay
+- Enter available quantity for Paynet Loyalty
 - Edit product information
 - Increase or decrease available quantity
 - Hide or unhide a product
 - Mark a product out of stock
-- Remove a product from NetPay
+- Remove a product from Paynet Loyalty
 - View incoming orders
 - Update order status
 - View USDC payments
@@ -169,27 +169,27 @@ The customer may:
 
 ## 6. Store Inventory Scope
 
-NetPay does not manage the store’s entire real-world inventory.
+Paynet Loyalty does not manage the store’s entire real-world inventory.
 
 Example:
 
 ```text
 Physical store inventory: 1,000 products
-Products published on NetPay: 100 products
+Products published on Paynet Loyalty: 100 products
 ```
 
-The quantity stored in NetPay represents:
+The quantity stored in Paynet Loyalty represents:
 
-> The number of units the store makes available for sale through NetPay.
+> The number of units the store makes available for sale through Paynet Loyalty.
 
 Example:
 
 ```text
 Physical stock: 200 Coca-Cola cans
-NetPay available quantity: 40 Coca-Cola cans
+Paynet Loyalty available quantity: 40 Coca-Cola cans
 ```
 
-Only the quantity published to NetPay is decreased by NetPay orders.
+Only the quantity published to Paynet Loyalty is decreased by Paynet Loyalty orders.
 
 ### Included inventory features
 
@@ -227,7 +227,7 @@ Each product should support:
 - Description
 - Selling price
 - Currency display
-- NetPay available quantity
+- Paynet Loyalty available quantity
 - Image path or storage URL
 - Active status
 - Hidden status
@@ -285,14 +285,14 @@ Merchant revenue must flow directly:
 Customer wallet → Store wallet
 ```
 
-NetPay must not route normal sales revenue through:
+Paynet Loyalty must not route normal sales revenue through:
 
 - Admin wallet
-- NetPay treasury wallet
+- Paynet Loyalty treasury wallet
 - Agent wallet
 - Platform intermediary wallet
 
-NetPay acts as the commerce, verification, loyalty, and coordination layer.
+Paynet Loyalty acts as the commerce, verification, loyalty, and coordination layer.
 
 ---
 
@@ -325,7 +325,7 @@ Examples:
 ### 10.3 Additional rules
 
 - APoint does not expire
-- APoint is universal across the NetPay ecosystem
+- APoint is universal across the Paynet Loyalty ecosystem
 - APoint is linked to the customer wallet
 - APoint is non-transferable in V1
 - Customers cannot mint APoint
@@ -677,11 +677,11 @@ Rules:
 
 ---
 
-## 19. Why Stores Join NetPay
+## 19. Why Stores Join Paynet Loyalty
 
 Stores benefit from:
 
-- Presence in the NetPay merchant ecosystem
+- Presence in the Paynet Loyalty merchant ecosystem
 - A QR storefront without building a full website
 - Direct USDC settlement
 - Shared on-chain loyalty infrastructure
@@ -695,7 +695,7 @@ Stores benefit from:
 
 ---
 
-## 20. Why Customers Use NetPay
+## 20. Why Customers Use Paynet Loyalty
 
 Customers benefit from:
 
@@ -725,7 +725,7 @@ Customers benefit from:
 - Lending
 - Borrowing
 - Yield
-- Merchant custody by NetPay
+- Merchant custody by Paynet Loyalty
 - Agent autonomous treasury
 - Agent-held merchant funds
 - Multi-branch ownership model
@@ -836,14 +836,14 @@ The architecture and integrations should follow official references where applic
 - Arc App Kit
 - Arc Documentation
 
-Agent features should reuse approved starter-kit patterns when they fit NetPay’s needs, and custom tools should be written only where required.
+Agent features should reuse approved starter-kit patterns when they fit Paynet Loyalty's needs, and custom tools should be written only where required.
 
 ---
 
 ## 26. Current Project Path
 
 ```text
-D:\Tuyen_Lam viec\02 Web Hackathon\08 Arc Encode\NetPay Loyalty
+Project workspace: Paynet Loyalty
 ```
 
 Target specification file:

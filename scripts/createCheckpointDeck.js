@@ -277,7 +277,7 @@ let slideNo = 1;
   title(slide, 'Solution', 'A complete commerce flow behind every merchant wallet and QR.');
   bullets(slide, [
     'Each merchant wallet maps to a digital storefront with products, local prices, inventory, payment methods, and order history.',
-    'Customers scan a Paynet QR, build a cart, and choose cash, bank transfer, or USDC on Arc.',
+    'Customers scan a Paynet Loyalty QR, build a cart, and choose cash, bank transfer, or USDC on Arc.',
     'USDC orders store a local-currency to USDC exchange-rate snapshot before payment.',
     'Paid orders trigger APoint reward accounting with duplicate-safe award logic and audit logs.',
   ], 0.9, 2.65, 6.2, 2.8, { size: 12 });
@@ -299,7 +299,7 @@ let slideNo = 1;
   title(slide, 'What We Built', 'A working MVP with mobile merchant and customer flows.');
   card(slide, 0.72, 2.28, 2.82, 2.06, 'Store Mobile', 'Owner/staff wallet access, product publishing, QR storefront links, orders awaiting confirmation, settlement settings, and store agent panel.', C.purple);
   card(slide, 3.82, 2.28, 2.82, 2.06, 'Customer Mobile', 'Storefront browsing, local-currency cart, payment method selection, wallet connection, APoint balance, and checkout handoff.', C.blue);
-  card(slide, 6.92, 2.28, 2.82, 2.06, 'Arc Checkout', 'Real wallet transaction flow for Arc Testnet USDC, receipt waiting, explorer links, and NetPay V1 registry proof.', C.green);
+  card(slide, 6.92, 2.28, 2.82, 2.06, 'Arc Checkout', 'Real wallet transaction flow for Arc Testnet USDC, receipt waiting, explorer links, and Paynet Loyalty V1 registry proof.', C.green);
   card(slide, 10.02, 2.28, 2.82, 2.06, 'Supabase Backend', 'Orders, payments, exchange-rate snapshots, audit logs, store payment methods, APoint ledger, and idempotent awarding.', C.orange);
   metric(slide, 1.1, 5.18, 2.35, 'Manual methods', 'cash + bank', C.orange);
   metric(slide, 3.82, 5.18, 2.35, 'Stablecoin method', 'usdc_arc', C.green);
@@ -388,7 +388,7 @@ let slideNo = 1;
   addHeader(slide);
   title(slide, 'Technical Proof', 'The MVP records a verifiable trail from cart to reward.');
   card(slide, 0.82, 2.2, 3.8, 2.15, 'Supabase records', 'orders, order_items, payments, store_payment_methods, exchange_rates, customers, apoint_ledger, audit_logs', C.blue);
-  card(slide, 4.78, 2.2, 3.8, 2.15, 'Arc transactions', 'USDC transfer transaction link and NetPay V1 registry/proof transaction link are displayed in checkout.', C.green);
+  card(slide, 4.78, 2.2, 3.8, 2.15, 'Arc transactions', 'USDC transfer transaction link and Paynet Loyalty V1 registry/proof transaction link are displayed in checkout.', C.green);
   card(slide, 8.74, 2.2, 3.8, 2.15, 'Safety rules', 'Manual payments need owner/staff confirmation. USDC orders are confirmed after chain validation. APoint awarding is idempotent.', C.orange);
   bullets(slide, [
     'Build check: npm run build passes.',

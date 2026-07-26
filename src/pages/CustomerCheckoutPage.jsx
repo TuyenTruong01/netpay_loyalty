@@ -11,7 +11,6 @@ import {
   ARC_USDC,
 } from '../services/arcPayment.js';
 import { ensureEvmChain, getActiveEvmProvider, restoreEvmWalletConnection } from '../services/evmWallet.js';
-import { recordApointPaymentProof } from '../services/apointProofService.js';
 import { hasNetPayV1RegistryConfig, recordNetPayV1Payment } from '../services/netpayV1RegistryService.js';
 import { formatPoints, money, pointsFromRaw, pointsToOnchainUnits, rawFromPoints, rawFromUSDC, redeemablePointsFromRaw, shortAddress } from '../utils/format.js';
 
@@ -621,6 +620,11 @@ export default function CustomerCheckoutPage({
 
   async function payWithWallet() {
     if (!order) return;
+    if (!usesNetPayV1Registry) {
+      setStatus('ready');
+      setErrorMessage('NetPayPaymentRegistry is not configured. Set VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS before accepting Arc payments.');
+      return;
+    }
 
     setErrorMessage('');
     setTxHash('');
@@ -682,28 +686,22 @@ export default function CustomerCheckoutPage({
         throw new Error('USDC payment reverted. The invoice was not marked as paid.');
       }
 
-      const proof = usesNetPayV1Registry
-        ? await recordNetPayV1Payment({
-            from: walletAddress,
-            orderId: order.id || order.code,
-            storeId: getOrderStoreId(order, store) || checkoutStore.name,
-            customerWallet: walletAddress,
-            storeWallet: checkoutReceiverWallet,
-            grossAmount: totalBeforePoints,
-            paidAmount: payable,
-            pointsRedeemed: onchainRedeemPoints,
-            txReference: paymentTxHash,
-            provider: wallet.provider,
-          })
-        : await recordApointPaymentProof({
-            from: walletAddress,
-            invoiceId: order.code,
-            customerWallet: walletAddress,
-            storeWallet: checkoutReceiverWallet,
-            amount: payable,
-            points: pointsToOnchainUnits(earnedPoints),
-            provider: wallet.provider,
-          });
+      if (!usesNetPayV1Registry) {
+        throw new Error('NetPayPaymentRegistry is not configured. Set VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS before accepting Arc payments.');
+      }
+
+      const proof = await recordNetPayV1Payment({
+        from: walletAddress,
+        orderId: order.id || order.code,
+        storeId: getOrderStoreId(order, store) || checkoutStore.name,
+        customerWallet: walletAddress,
+        storeWallet: checkoutReceiverWallet,
+        grossAmount: totalBeforePoints,
+        paidAmount: payable,
+        pointsRedeemed: onchainRedeemPoints,
+        txReference: paymentTxHash,
+        provider: wallet.provider,
+      });
 
       setProofTxHash(proof.txHash);
 
@@ -713,9 +711,7 @@ export default function CustomerCheckoutPage({
           payerWallet: walletAddress,
           txHash: paymentTxHash,
           rawResponse: {
-            mode: usesNetPayV1Registry
-              ? 'arc-testnet-usdc-payment-with-netpay-v1-registry'
-              : 'arc-testnet-usdc-payment-with-apoint-proof',
+            mode: 'arc-testnet-usdc-payment-with-netpay-v1-registry',
             chain_id: ARC_TESTNET_CHAIN.chainIdDecimal,
             network: ARC_TESTNET_CHAIN.code,
             receiver_wallet: checkoutReceiverWallet,
@@ -751,7 +747,7 @@ export default function CustomerCheckoutPage({
         setTxHash(submittedPaymentTxHash);
         setStatus('payment_submitted');
         setErrorMessage(
-          `USDC payment was submitted, but NetPay could not finish confirmation/proof yet: ${error.message || 'Arc Testnet confirmation failed.'} Check the transaction link below and do not pay again unless the transaction failed.`
+          `USDC payment was submitted, but Paynet Loyalty could not finish confirmation/proof yet: ${error.message || 'Arc Testnet confirmation failed.'} Check the transaction link below and do not pay again unless the transaction failed.`
         );
         return;
       }
@@ -790,7 +786,7 @@ export default function CustomerCheckoutPage({
         <div className="checkout-public-head">
           <div className="logo-mark">A</div>
           <div>
-            <p className="eyebrow">Paynet Checkout</p>
+            <p className="eyebrow">Paynet Loyalty Checkout</p>
             <h1>{checkoutStore.name}</h1>
             <span>{checkoutStore.branch} · {paymentTokenSymbol} Payment</span>
           </div>
@@ -966,6 +962,7 @@ export default function CustomerCheckoutPage({
               type="button"
               disabled={
                 !walletChainReady ||
+                !usesNetPayV1Registry ||
                 status === 'paying' ||
                 status === 'confirming' ||
                 status === 'payment_submitted' ||
@@ -984,6 +981,11 @@ export default function CustomerCheckoutPage({
                     ? 'Payment submitted - checking confirmation'
                   : `Pay with ${paymentTokenSymbol}`}
             </button>
+            {!usesNetPayV1Registry && (
+              <p className="helper-text warn-text">
+                NetPayPaymentRegistry is not configured. Set the V1 contract address before accepting Arc payments.
+              </p>
+            )}
           </>
         )}
 
@@ -1013,7 +1015,7 @@ export default function CustomerCheckoutPage({
             target="_blank"
             rel="noreferrer"
           >
-            {usesNetPayV1Registry ? 'View NetPay V1 registry transaction' : 'View APoint proof transaction'} <ExternalLink size={14} />
+            View Paynet Loyalty V1 registry transaction <ExternalLink size={14} />
           </a>
         )}
       </section>

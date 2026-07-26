@@ -1,4 +1,4 @@
--- NetPay Loyalty V1 Supabase schema + seed data.
+-- Paynet Loyalty V1 Supabase schema + seed data.
 -- Run this whole file in Supabase SQL Editor.
 -- This schema is compatible with the current React app and keeps V1 tables for
 -- mobile storefront, direct Arc USDC settlement, APoint cache, reviews, agents,
@@ -598,7 +598,7 @@ on conflict (network_id, symbol) do update set
 
 insert into public.admin_wallets(wallet_address, label, is_active) values
   ('0x8e23Ca66E4E4d68c6C52Ed651d8487320B3d57d2', 'System Admin', true),
-  ('0x6bCA39aA6754537Cf7711a8d3DD698530F9458C5', 'NetPay V1 Deployer', true)
+  ('0x6bCA39aA6754537Cf7711a8d3DD698530F9458C5', 'Paynet Loyalty V1 Deployer', true)
 on conflict (wallet_address) do update set
   label = excluded.label,
   is_active = excluded.is_active;

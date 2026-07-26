@@ -1,276 +1,179 @@
-# Paynet APoint Loyalty
+# Paynet Loyalty
 
-Paynet APoint Loyalty is a multi-store POS, checkout, inventory, and loyalty application built for Arc Testnet. Store staff can create invoices, customers can scan a QR checkout link, connect a wallet, pay with USDC on Arc, redeem APoint, and record a minimal on-chain payment proof.
+Paynet Loyalty is an agent-ready, wallet-native commerce and loyalty platform built on Arc. It gives real-world merchants a mobile storefront, QR shopping entry point, USDC checkout on Arc, manual cash/bank confirmation, and a unified APoint rewards system.
 
-The project combines a React/Vite frontend, Supabase operational data, WalletConnect/mobile wallet support, and a Solidity proof contract deployed for Arc Testnet demos.
+The project is built for the Arc hackathon DeFi and Agentic Economy tracks. The public product name is **Paynet Loyalty**. The Solidity contract suite keeps the technical `NetPay*` names for compatibility with deployed contracts.
 
 ## Problem
 
-Small retail stores often manage sales, inventory, staff access, payment records, and loyalty balances across disconnected tools. This makes it difficult to audit payments, support wallet-native customers, or run loyalty programs across multiple store locations.
+Small merchants often run catalog, inventory, payment confirmation, customer identity, and loyalty balances across disconnected tools. A normal payment QR code usually contains only recipient/payment information, so customers still need a separate product catalog, cart, receipt, and reward flow.
 
-Paynet APoint focuses on these problems:
-
-- Cashiers need a simple POS flow for creating invoices and checkout QR codes.
-- Store owners need role-based access without a heavy back-office system.
-- Customers need a mobile-friendly checkout page that supports wallet payment.
-- Loyalty rewards should be tied to real paid amounts and remain easy to verify.
-- Private order, customer, and inventory data should stay off-chain.
-- Public blockchain data should only contain minimal payment proof.
+Paynet Loyalty solves this by turning a merchant wallet and QR code into a complete storefront and checkout flow.
 
 ## Solution
 
-Paynet APoint provides a store operations dashboard and wallet checkout flow:
+- Each merchant has a wallet-linked storefront with products, local prices, inventory, payment methods, and order history.
+- Customers scan a Paynet Loyalty QR or open `/s/:storeSlug`, browse products, build a cart, and choose cash, bank transfer, or USDC on Arc.
+- USDC checkout records a local-currency to USDC exchange-rate snapshot before payment.
+- Cash and bank transfer orders remain `awaiting_confirmation` until an owner/staff wallet confirms them.
+- Arc USDC orders become paid only after wallet payment and Paynet Loyalty V1 registry confirmation.
+- Paid orders award APoint once, with audit logs and duplicate-safe reward logic.
 
-- Supabase stores stores, products, staff, orders, payments, inventory, customers, and APoint ledger data.
-- Arc Testnet handles customer USDC payments.
-- A Solidity contract emits `PaymentRecorded` events for payment proof.
-- Wallet roles are resolved from `src/config/roleAccess.json`.
-- The POS creates QR checkout links for customers.
-- The public checkout page supports injected wallets, WalletConnect, and a mobile MetaMask Browser fallback.
-- Demo mode allows local checkout testing without writing orders, inventory changes, or point balances to production Supabase tables.
+## DeFi Track Relevance
 
-## Key Features
+Paynet Loyalty is stablecoin-native merchant payment infrastructure:
 
-- Multi-store System Admin console.
-- Store owner and staff wallet-based access.
-- POS invoice builder with product search, quantity controls, tax, totals, APoint redemption, and QR generation.
-- Customer checkout page at `/checkout/:token`.
-- Arc Testnet USDC payment flow.
-- APoint payment proof transaction after wallet payment.
-- Supabase payment status polling on the POS screen.
-- Manual cash confirmation for non-wallet payments.
-- Mobile wallet support through WalletConnect.
-- iPhone/mobile fallback button to open checkout inside MetaMask Mobile Browser.
-- Product catalog with image, SKU, barcode/QR field, category, unit, sell price, cost price, stock, description, and status.
-- Product cards use contained square images to avoid cropping.
-- Product and inventory delete actions with confirmation.
-- Add/Edit Product accepts direct USDC decimal prices such as `1.2`.
-- Category and Unit dropdown management inside the product modal.
-- Inventory and warehouse views with low-stock indicators.
-- Orders, revenue, best-seller, customer, points history, rewards, and settings pages.
-- Local fallback data when Supabase is not configured.
-- Demo button beside Connect Wallet for safe product and checkout previews.
+- Uses Arc and USDC for direct customer-to-merchant settlement.
+- Stores `total_local`, local currency, exchange-rate snapshot, and `total_usdc` for each storefront order.
+- Records Arc transaction hashes and Paynet Loyalty V1 registry proof links.
+- Keeps merchant sales non-custodial: USDC goes directly to the store wallet.
+- Treats APoint as a programmable loyalty layer tied to verified USDC payment amounts.
 
-## Tech Stack
+## Agentic Economy Track Relevance
+
+Paynet Loyalty includes agent surfaces for merchant and customer workflows:
+
+- **Store Management Agent:** answers low-stock, order, sales, payment, and store-status questions from the store mobile UI.
+- **Shopping Assistant Agent:** helps customers understand products, payments, APoint, and checkout options.
+- **Checkout/Loyalty logic:** validates order/payment state and awards APoint after confirmed payment.
+
+Agents do not sign wallet transactions, move merchant funds, delete products directly, or change owner wallets. They prepare safe answers and actions, and the user confirms sensitive operations through the UI.
+
+## Current Working Features
+
+- Desktop admin and operations dashboard.
+- Store owner/staff wallet access.
+- Store Mobile page at `/store-mobile`.
+- Customer storefront at `/shop` and `/s/:storeSlug`.
+- Explore and map views for active stores.
+- Product publishing with local currency prices and Paynet Loyalty-listed quantity.
+- QR storefront link/poster flow.
+- Real Supabase orders, order items, payments, audit logs, and APoint ledger rows.
+- Cash and bank transfer checkout with owner/staff confirmation.
+- USDC on Arc checkout with wallet transaction and Paynet Loyalty V1 registry transaction.
+- Supabase Edge Function `exchange-rate` for USDC/local-currency snapshots.
+- APoint awarding after paid orders with idempotency protection.
+- Presentation deck at `docs/Paynet_Loyalty_Checkpoint_2.pptx`.
+
+## Architecture
+
+```text
+Customer / Store Mobile UI
+        |
+        v
+React + Vite frontend
+        |
+        +-- Supabase client
+        |      stores, products, orders, payments, exchange_rates,
+        |      customers, apoint_ledger, audit_logs, agent_actions
+        |
+        +-- Supabase Edge Function
+        |      exchange-rate
+        |
+        +-- EVM wallet provider
+               Arc Testnet USDC transfer
+               NetPayPaymentRegistry transaction
+```
+
+## Technology Stack
 
 - React
 - Vite
 - Supabase JavaScript client
+- Supabase SQL migrations
+- Supabase Edge Functions
 - Hardhat
 - Solidity `0.8.24`
 - Arc Testnet
 - EVM wallet provider API
-- `@walletconnect/ethereum-provider`
+- WalletConnect
 - Lucide React icons
 - Plain CSS in `src/styles.css`
 
-## User Roles
-
-Role access is configured in `src/config/roleAccess.json` and resolved in `src/utils/storeNetwork.js`.
-
-| Role | Current access |
-| --- | --- |
-| System Admin | Can manage network stores and access store operation pages, including POS / Checkout. |
-| Store Owner | Can manage POS, staff, products, inventory, warehouses, settings, and store operation pages for the assigned store. |
-| Store Staff / Cashier | Can use operational pages such as POS, orders, customers, and inventory for the assigned store. |
-| Guest / Unassigned Wallet | Cannot access store operations. |
-| Demo Session | Can choose a store and create local demo checkout invoices without writing production orders or inventory changes. |
-| Customer Wallet | Uses the public checkout page to connect a wallet, optionally redeem points, pay USDC, and receive updated loyalty data when using Supabase checkout. |
-
-## Main Workflow
-
-1. A user connects a wallet or starts Demo mode.
-2. The app resolves the wallet role and active store.
-3. Staff opens POS / Checkout.
-4. Staff creates a new invoice and adds products.
-5. The POS calculates subtotal, tax, point redemption, payable amount, and estimated APoint earning.
-6. Staff generates a checkout QR/link.
-7. Customer opens `/checkout/:token` from the QR/link.
-8. Customer connects a wallet using injected provider, WalletConnect, or MetaMask Mobile Browser fallback.
-9. If the wallet is on the wrong network, the app requests a switch to Arc Testnet.
-10. Customer optionally redeems available APoint.
-11. Customer pays USDC on Arc Testnet.
-12. The app waits for the Arc payment receipt.
-13. The app sends a proof transaction to `ApointPaymentProof`.
-14. Supabase marks the order and payment as paid, stores payment/proof metadata, and updates customer points.
-15. The POS polling loop detects the paid status and shows payment confirmation.
-
-For cash payments, staff can use the manual cash confirmation path from the POS screen. This updates Supabase only and does not emit an Arc proof event.
-
-## Demo Workflow
-
-The header includes a `Demo` button beside `Connect Wallet`.
-
-Demo mode:
-
-- Does not require an approved wallet.
-- Allows store selection.
-- Allows POS invoice creation.
-- Creates `demo-*` checkout tokens.
-- Encodes demo invoice data into the checkout token so a phone can open the QR checkout page.
-- Does not write demo orders to the main Supabase `orders` or `payments` tables.
-- Does not subtract real inventory.
-- Does not add real customer points.
-
-## Loyalty Rules
-
-Point math is implemented in `src/utils/format.js`.
-
-- Display unit: `10,000` raw units = `1.00 USDC`.
-- Earning: `1 USDC paid = 1 APoint`.
-- Fractional points are supported. Example: `3.08 USDC = 3.08 APoint`.
-- Redemption: `1 APoint = 0.01 USDC discount`.
-- Redemption is capped at 20% of the invoice total.
-- On-chain proof stores points as scaled integer units using `POINTS_ONCHAIN_SCALE = 10000`.
-
-## Blockchain / Smart Contract Integration
-
-The current blockchain integration targets Arc Testnet only.
+## Arc Testnet Configuration
 
 | Item | Value |
 | --- | --- |
-| Chain | Arc Testnet |
+| Network | Arc Testnet |
 | Chain ID | `5042002` |
+| Chain ID hex | `0x4cef52` |
 | RPC | `https://rpc.testnet.arc.network` |
 | Explorer | `https://testnet.arcscan.app` |
 | Gas token | USDC |
 | USDC token interface | `0x3600000000000000000000000000000000000000` |
 
-### Payment Service
+## Current Contract Addresses
 
-`src/services/arcPayment.js`:
+These are Arc Testnet deployment addresses for the current V1 contract suite:
 
-- Connects through the active EVM provider.
-- Uses the active WalletConnect provider when the customer connected through WalletConnect.
-- Requests Arc Testnet chain switching when needed.
-- Encodes ERC-20 `transfer(address,uint256)`.
-- Sends USDC to the store receiver wallet.
-- Waits for transaction receipts.
-- Builds Arc explorer transaction links.
+| Contract | Address |
+| --- | --- |
+| NetPayStoreRegistry | `0xb1c1A8508A39028330Bc2f204557f89AbEF27eb1` |
+| APointLedger | `0x3A94d77956b66c4B62FC3D8C9470439D3381CcAe` |
+| NetPayPaymentRegistry | `0x2ecFAD44469Ebdc90B4939c889e7A9bDc39E8E14` |
 
-### Wallet Service
-
-`src/services/evmWallet.js`:
-
-- Supports injected wallets such as MetaMask Browser.
-- Supports WalletConnect when no injected provider is available.
-- Restores WalletConnect accounts on focus and visibility changes through the checkout page.
-- Keeps wallet connection state even when automatic chain switching is not supported.
-- Provides WalletConnect mobile wallet configuration for MetaMask.
-
-### Proof Contract
-
-Contract: `contracts/ApointPaymentProof.sol`
-
-The proof contract emits:
-
-```solidity
-event PaymentRecorded(
-    string invoiceId,
-    address indexed customerWallet,
-    address indexed storeWallet,
-    uint256 amount,
-    uint256 points,
-    uint256 timestamp
-);
-```
-
-The app records payment proof through `src/services/apointProofService.js`. The proof transaction hash is saved in Supabase when the full connected checkout flow is used.
-
-## Database / Supabase Integration
-
-Supabase is optional for local UI exploration and required for the full connected multi-store workflow.
-
-Client configuration: `src/lib/supabaseClient.js`
-
-Schema file: `supabase/paynet_schema.sql`
-
-Main tables:
-
-- `store_types`
-- `product_statuses`
-- `warehouse_statuses`
-- `stores`
-- `store_staff`
-- `products`
-- `warehouses`
-- `inventory`
-- `customers`
-- `payment_networks`
-- `payment_tokens`
-- `store_payment_methods`
-- `orders`
-- `order_items`
-- `payments`
-- `apoint_ledger`
-- `audit_logs`
-
-The schema seeds Arc Testnet network/token rows, demo stores, staff wallets, products, warehouses, customers, and payment methods.
-
-RLS is enabled, but the included policies are prototype policies for hackathon/demo use. They should be tightened before production.
-
-## Local Setup
-
-### 1. Install dependencies
+Deploy or test the current contracts with:
 
 ```bash
-npm install
+npm run compile:contracts
+npm run test:netpay:v1
+npm run deploy:netpay:arc
 ```
 
-### 2. Create `.env`
+## Supabase Setup
 
-Windows:
+For a fresh Supabase project:
+
+1. Open Supabase SQL Editor.
+2. Run `supabase/netpay_v1_schema.sql`.
+3. Run the migration files in `supabase/migrations/` in filename order.
+4. Deploy the exchange-rate Edge Function:
 
 ```bash
-copy .env.example .env
+./node_modules/@supabase/cli-windows-x64/bin/supabase.exe login
+./node_modules/@supabase/cli-windows-x64/bin/supabase.exe link --project-ref YOUR_PROJECT_REF
+./node_modules/@supabase/cli-windows-x64/bin/supabase.exe secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+./node_modules/@supabase/cli-windows-x64/bin/supabase.exe functions deploy exchange-rate
 ```
 
-macOS/Linux:
+The Edge Function uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` server-side. Do not expose the service role key in frontend code.
+
+## Environment Variables
+
+Create `.env` from `.env.example`:
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in the values from your Supabase project, WalletConnect project, and deployed proof contract.
+Windows CMD:
 
-### 3. Set up Supabase
-
-1. Create a new Supabase project.
-2. Open SQL Editor.
-3. Run the full contents of `supabase/paynet_schema.sql`.
-4. Copy the project URL and anon key into `.env`.
-
-### 4. Deploy the proof contract
-
-Make sure the deployer wallet has Arc Testnet USDC for gas.
-
-```bash
-npm run deploy:arc
+```bat
+copy .env.example .env
 ```
 
-Then set:
+Fill in:
 
 ```env
-VITE_APOINT_PAYMENT_PROOF_ADDRESS=
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_or_publishable_key
+VITE_ARC_TESTNET_CHAIN_ID=5042002
+VITE_ARC_TESTNET_RPC_URL=https://rpc.testnet.arc.network
+VITE_ARC_TESTNET_USDC_ADDRESS=0x3600000000000000000000000000000000000000
+VITE_NETPAY_STORE_REGISTRY_ADDRESS=0xb1c1A8508A39028330Bc2f204557f89AbEF27eb1
+VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS=0x2ecFAD44469Ebdc90B4939c889e7A9bDc39E8E14
+VITE_APOINT_LEDGER_ADDRESS=0x3A94d77956b66c4B62FC3D8C9470439D3381CcAe
+VITE_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
+ARC_RPC_URL=https://rpc.testnet.arc.network
+DEPLOYER_PRIVATE_KEY=your_private_key_without_0x
 ```
 
-For the V1 contract set, run:
+Do not commit `.env` or a real `DEPLOYER_PRIVATE_KEY`.
+
+## Local Installation
 
 ```bash
-npm run deploy:netpay:arc
-```
-
-Then set the deployed addresses:
-
-```env
-VITE_NETPAY_STORE_REGISTRY_ADDRESS=
-VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS=
-VITE_APOINT_LEDGER_ADDRESS=
-```
-
-### 5. Run the app
-
-```bash
+npm install
 npm run dev
 ```
 
@@ -280,151 +183,51 @@ Open the Vite URL, usually:
 http://localhost:5173
 ```
 
-### 6. Build
+Use a custom port if needed:
+
+```bash
+npm run dev -- --port 5178
+```
+
+## Windows Run Instructions
+
+Option 1: double-click:
+
+```text
+RUN_LOCAL_WINDOWS.bat
+```
+
+Option 2: run from Git Bash or CMD in the project folder:
+
+```bash
+npm install
+npm run dev -- --port 5178
+```
+
+The batch file uses only relative paths and calls `npm run dev`, so it can run on another Windows PC after dependencies are installed.
+
+## Build
 
 ```bash
 npm run build
 ```
 
-### 7. Preview production build
+## Main Demo Flow
 
-```bash
-npm run preview
-```
+1. Open `/store-mobile`.
+2. Connect an owner/staff wallet or use read-only preview for navigation.
+3. Confirm store payment methods and listed products.
+4. Open `/shop` or `/s/minh-chau-grocery`.
+5. Add products to cart.
+6. Choose `USDC on Arc`.
+7. Connect a wallet on Arc Testnet.
+8. Confirm the order and pay USDC.
+9. View the USDC transaction and Paynet Loyalty V1 registry transaction.
+10. Refresh checkout/store mobile to see the order marked paid and APoint awarded.
 
-## Environment Variables
+## Repository Notes
 
-Use `.env.example` as the template.
-
-```env
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_xxxxxxxxxxxxxxxxxxxxxxxxx
-VITE_ARC_TESTNET_CHAIN_ID=5042002
-VITE_ARC_TESTNET_RPC_URL=https://rpc.testnet.arc.network
-VITE_ARC_TESTNET_USDC_ADDRESS=0x3600000000000000000000000000000000000000
-VITE_NETPAY_STORE_REGISTRY_ADDRESS=
-VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS=
-VITE_APOINT_LEDGER_ADDRESS=
-VITE_APOINT_PAYMENT_PROOF_ADDRESS=
-VITE_WALLETCONNECT_PROJECT_ID=
-ARC_RPC_URL=https://rpc.testnet.arc.network
-DEPLOYER_PRIVATE_KEY=your_private_key_without_0x
-```
-
-Notes:
-
-- Do not commit a real `DEPLOYER_PRIVATE_KEY`.
-- `VITE_WALLETCONNECT_PROJECT_ID` is required for WalletConnect mobile checkout.
-- `VITE_NETPAY_PAYMENT_REGISTRY_ADDRESS` makes checkout record through the V1 payment registry.
-- `VITE_APOINT_PAYMENT_PROOF_ADDRESS` remains available as a legacy proof fallback when V1 registry is not configured.
-
-## Demo Accounts / Wallets
-
-These are public addresses for role access and seeded demo data. They are not private keys.
-
-### System Admin
-
-| Label | Wallet |
-| --- | --- |
-| System Admin | `0x8e23Ca66E4E4d68c6C52Ed651d8487320B3d57d2` |
-
-### Stores
-
-| Store | Role | Wallet |
-| --- | --- | --- |
-| Minh Chau Grocery | Owner / Receiver | `0x863FBd9eaC8D1001828B2502A71d9520Cf85636D` |
-| Minh Chau Grocery | Cashier | `0xCb55bA6B93A54Ae9406710620cD0686BDce4522d` |
-| Morning Cafe | Owner / Receiver | `0xc8044822b1cBF8416489e5Fc676c7746E2515aC6` |
-| Morning Cafe | Cashier | `0x8F524d30238C1a5734ddd1Fc7470Fe72204539E8` |
-| Golden Bowl Noodles | Owner / Receiver | `0x1e09B25731eef93646A36aD03E20147D3dfF3214` |
-| Golden Bowl Noodles | Cashier | `0x34104D0684434918EFa4B87eeC291C38ae25B8A1` |
-
-### Seeded Customer Wallets
-
-| Label | Wallet |
-| --- | --- |
-| Wallet Customer | `0xf3a00000000000000000000000000000009b2c1d` |
-| Guest Wallet | `0x7b2e1af93c000000000000000000000000abc123` |
-
-## Project Structure
-
-```text
-.
-|-- contracts/
-|   `-- ApointPaymentProof.sol
-|-- scripts/
-|   |-- deployApointPaymentProof.js
-|   `-- testRecordPaymentProof.js
-|-- supabase/
-|   `-- paynet_schema.sql
-|-- public/
-|   `-- png/
-|-- src/
-|   |-- chains/
-|   |   |-- arcTestnet.js
-|   |   `-- index.js
-|   |-- components/
-|   |   |-- Header.jsx
-|   |   |-- POSPanel.jsx
-|   |   |-- ProductGrid.jsx
-|   |   |-- ProductModal.jsx
-|   |   |-- Sidebar.jsx
-|   |   `-- StatusBanner.jsx
-|   |-- config/
-|   |   `-- roleAccess.json
-|   |-- lib/
-|   |   `-- supabaseClient.js
-|   |-- pages/
-|   |   |-- CustomerCheckoutPage.jsx
-|   |   |-- POSPage.jsx
-|   |   |-- ProductsPage.jsx
-|   |   |-- InventoryPage.jsx
-|   |   |-- SystemAdminPage.jsx
-|   |   `-- other dashboard and operation pages
-|   |-- services/
-|   |   |-- apointProofService.js
-|   |   |-- arcPayment.js
-|   |   |-- evmWallet.js
-|   |   `-- paynetService.js
-|   |-- utils/
-|   |   |-- format.js
-|   |   |-- storeNetwork.js
-|   |   `-- supporting helpers
-|   |-- App.jsx
-|   |-- main.jsx
-|   `-- styles.css
-|-- hardhat.config.js
-|-- package.json
-`-- README.md
-```
-
-## Screenshots
-
-Screenshots can be added under `docs/images`.
-
-Suggested files:
-
-- `docs/images/system-admin.png`
-- `docs/images/store-pos.png`
-- `docs/images/customer-checkout.png`
-- `docs/images/payment-confirmed.png`
-- `docs/images/products-inventory.png`
-- `docs/images/points-history.png`
-
-## Roadmap
-
-- Replace prototype Supabase RLS policies with production-grade policies.
-- Add automated tests for point math, checkout confirmation, and proof encoding.
-- Add an admin/indexer view for Arc `PaymentRecorded` events.
-- Add richer audit logging for product, inventory, and staff changes.
-- Add production deployment documentation.
-- Add Arc mainnet configuration when production addresses are available.
-
-## Current Limitations
-
-- Supabase policies in the included schema are permissive prototype policies.
-- Demo mode is intentionally local/test-oriented and does not write production orders or inventory changes.
-- Category and Unit management is currently derived from product data in the UI, not separate Supabase tables.
-- Manual cash payments are recorded in Supabase only and do not emit Arc proof events.
-- The proof contract emits events but does not maintain a full on-chain order registry.
-- The app is configured for Arc Testnet.
+- `supabase/.temp/`, `.env`, logs, build output, Hardhat artifacts, and editor files are ignored.
+- The legacy proof fallback was removed. The current checkout path uses `NetPayPaymentRegistry`.
+- `supabase/netpay_v1_schema.sql` is the current baseline schema. The old baseline schema was removed to avoid conflicting setup paths.
+- Contract names such as `NetPayStoreRegistry` remain technical identifiers even though the public project name is Paynet Loyalty.

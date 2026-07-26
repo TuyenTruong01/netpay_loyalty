@@ -1,4 +1,4 @@
-# Supabase setup for NetPay V1
+# Supabase setup for Paynet Loyalty V1
 
 ## 1. Run schema
 

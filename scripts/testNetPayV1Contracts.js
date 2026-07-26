@@ -174,7 +174,7 @@ async function main() {
     'Paused'
   );
 
-  console.log('NetPay V1 contract checks passed.');
+  console.log('Paynet Loyalty V1 contract checks passed.');
 }
 
 main().catch(error => {

@@ -334,7 +334,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
 
   function downloadQrPoster() {
     const target = `${window.location.origin}/s/${store.slug}?source=store_qr`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960"><rect width="100%" height="100%" fill="#ffffff"/><text x="48" y="90" font-family="Arial" font-size="42" font-weight="700" fill="#111827">${store.name}</text><rect x="180" y="170" width="360" height="360" fill="#111827"/><rect x="220" y="210" width="92" height="92" fill="#ffffff"/><rect x="408" y="210" width="92" height="92" fill="#ffffff"/><rect x="220" y="398" width="92" height="92" fill="#ffffff"/><text x="48" y="610" font-family="Arial" font-size="26" fill="#374151">Open this NetPay store:</text><text x="48" y="660" font-family="Arial" font-size="20" fill="#5b35f5">${target}</text><text x="48" y="725" font-family="Arial" font-size="18" fill="#64748b">QR poster placeholder. Install a QR generator before printing for production.</text></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960"><rect width="100%" height="100%" fill="#ffffff"/><text x="48" y="90" font-family="Arial" font-size="42" font-weight="700" fill="#111827">${store.name}</text><rect x="180" y="170" width="360" height="360" fill="#111827"/><rect x="220" y="210" width="92" height="92" fill="#ffffff"/><rect x="408" y="210" width="92" height="92" fill="#ffffff"/><rect x="220" y="398" width="92" height="92" fill="#ffffff"/><text x="48" y="610" font-family="Arial" font-size="26" fill="#374151">Open this Paynet Loyalty store:</text><text x="48" y="660" font-family="Arial" font-size="20" fill="#5b35f5">${target}</text><text x="48" y="725" font-family="Arial" font-size="18" fill="#64748b">QR poster placeholder. Install a QR generator before printing for production.</text></svg>`;
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     const link = document.createElement('a');
     link.href = url;
@@ -414,7 +414,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
                 <article><CircleDollarSign /><strong>{usdcSales.toFixed(2)}</strong><span>USDC sales</span></article>
                 <article><PackagePlus /><strong>{lowStock}</strong><span>Low stock</span></article>
               </div>
-              <button className="mobile-action" onClick={() => { if (requireWalletAccess()) { setDraft(blankProduct); setTab('edit'); } }}><Plus />Add product to NetPay<ChevronRight /></button>
+              <button className="mobile-action" onClick={() => { if (requireWalletAccess()) { setDraft(blankProduct); setTab('edit'); } }}><Plus />Add product to Paynet Loyalty<ChevronRight /></button>
               <button className="mobile-action" onClick={() => setTab('products')}><ShoppingBag />Manage listed products<ChevronRight /></button>
               <button className="mobile-action" onClick={() => setTab('orders')}><CircleDollarSign />View orders and payments<ChevronRight /></button>
               <button className="mobile-action" onClick={() => setTab('qr')}><QrCode />Store QR storefront<ChevronRight /></button>
@@ -427,7 +427,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
           {tab === 'products' && (
             <section>
               <div className="mobile-section-head">
-                <div><small>NetPay catalog</small><h2>{store.products.length} listed products</h2></div>
+                <div><small>Paynet Loyalty catalog</small><h2>{store.products.length} listed products</h2></div>
                 <button onClick={() => { if (requireWalletAccess()) { setDraft(blankProduct); setTab('edit'); } }}><Plus /></button>
               </div>
               {store.products.map(product => (
@@ -454,12 +454,12 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
               <label className="image-drop"><Camera /><span>Upload or take product photo</span><input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) setDraft({ ...draft, image: URL.createObjectURL(file) }); }} /></label>
               <label>Product name<input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
               <div className="form-two"><label>Code / SKU<input value={draft.sku} onChange={event => setDraft({ ...draft, sku: event.target.value })} /></label><label>Barcode<input value={draft.barcode || ''} onChange={event => setDraft({ ...draft, barcode: event.target.value })} /></label></div>
-              <div className="form-two"><label>Price ({store.currencyCode})<input type="number" step={store.currencyDecimals ? '0.01' : '1'} value={draft.localPrice ?? minorToLocal(draft.localPriceMinor, store.currencyDecimals)} onChange={event => setDraft({ ...draft, localPrice: event.target.value })} /></label><label>NetPay quantity<input type="number" min="0" value={draft.listedQuantity} onChange={event => setDraft({ ...draft, listedQuantity: event.target.value })} /></label></div>
+              <div className="form-two"><label>Price ({store.currencyCode})<input type="number" step={store.currencyDecimals ? '0.01' : '1'} value={draft.localPrice ?? minorToLocal(draft.localPriceMinor, store.currencyDecimals)} onChange={event => setDraft({ ...draft, localPrice: event.target.value })} /></label><label>Listed quantity<input type="number" min="0" value={draft.listedQuantity} onChange={event => setDraft({ ...draft, listedQuantity: event.target.value })} /></label></div>
               <label>Category<input value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })} /></label>
               <label>Description<textarea value={draft.description || ''} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
               <label className="toggle-line"><input type="checkbox" checked={draft.visible} onChange={event => setDraft({ ...draft, visible: event.target.checked })} />Visible in QR storefront</label>
               <button className="primary-mobile" type="submit"><Save />Save product</button>
-              {draft.id && <button type="button" className="danger-mobile" onClick={() => { if (requireWalletAccess()) { onDeleteProduct(draft.id); setTab('products'); } }}><Trash2 />Remove from NetPay</button>}
+              {draft.id && <button type="button" className="danger-mobile" onClick={() => { if (requireWalletAccess()) { onDeleteProduct(draft.id); setTab('products'); } }}><Trash2 />Remove from Paynet Loyalty</button>}
             </form>
           )}
 
@@ -539,7 +539,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
 
           {tab === 'agent' && (
             <section>
-              <div className="mobile-section-head"><div><small>Store Management Agent</small><h2>Ask NetPay</h2></div><Bot /></div>
+              <div className="mobile-section-head"><div><small>Store Management Agent</small><h2>Ask Paynet Loyalty</h2></div><Bot /></div>
               <div className="agent-panel">
                 <textarea value={agentText} onChange={event => setAgentText(event.target.value)} placeholder="Example: Which products are low stock?" />
                 <button type="button" onClick={runAgent} disabled={agentBusy}>{agentBusy ? 'Thinking...' : 'Run read-only request'}</button>

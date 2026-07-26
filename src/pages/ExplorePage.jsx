@@ -76,7 +76,7 @@ export default function ExplorePage({ stores = [], onSelectStore }) {
       <section className="market-shell">
         <header className="market-head">
           <div>
-            <small>NetPay marketplace</small>
+            <small>Paynet Loyalty marketplace</small>
             <h1>Explore stores</h1>
           </div>
           <a className="market-map-link" href="/map"><MapPin size={18} />Map</a>

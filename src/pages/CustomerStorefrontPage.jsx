@@ -82,7 +82,7 @@ export default function CustomerStorefrontPage({ store, stores, onSelectStore, c
       return;
     }
     if (requiresRateNow && (!rate || totalUsdc === null)) {
-      setWalletError('Exchange rate is unavailable. NetPay cannot create a payable USDC snapshot yet.');
+      setWalletError('Exchange rate is unavailable. Paynet Loyalty cannot create a payable USDC snapshot yet.');
       setView('cart');
       return;
     }
@@ -234,7 +234,7 @@ export default function CustomerStorefrontPage({ store, stores, onSelectStore, c
 
           {view === 'agent' && (
             <section>
-              <div className="mobile-section-head"><div><small>Shopping Assistant Agent</small><h2>Ask NetPay</h2></div><Bot /></div>
+              <div className="mobile-section-head"><div><small>Shopping Assistant Agent</small><h2>Ask Paynet Loyalty</h2></div><Bot /></div>
               <div className="agent-panel">
                 <textarea value={agentText} onChange={event => setAgentText(event.target.value)} placeholder="Example: Recommend popular products under 5 USDC" />
                 <button type="button" onClick={runAgent} disabled={agentBusy}>{agentBusy ? 'Thinking...' : 'Ask shopping agent'}</button>

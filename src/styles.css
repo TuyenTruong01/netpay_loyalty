@@ -197,7 +197,7 @@ code { background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; p
   .stats-grid, .placeholder-grid { grid-template-columns: 1fr; }
 }
 
-/* Paynet discussion pass updates */
+/* Paynet Loyalty discussion pass updates */
 .helper-text { display: block; color: #64748b; font-size: 12px; margin: -6px 0 12px; }
 .dashboard-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .chart-panel { min-height: 240px; }
@@ -365,7 +365,7 @@ code { background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; p
   border-radius: 12px;
 }
 
-/* Paynet Network admin */
+/* Paynet Loyalty network admin */
 .admin-hero {
   min-height: 230px;
   border: 1px solid var(--line);

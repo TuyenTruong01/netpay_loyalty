@@ -50,11 +50,11 @@ export default function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="logo-mark image-logo">
-          <img src="/png/logo/paynet-logo.png" alt="Paynet" />
+          <img src="/png/logo/paynet-logo.png" alt="Paynet Loyalty" />
         </div>
         <div>
-          <strong>Paynet</strong>
-          <span>APoint Loyalty</span>
+          <strong>Paynet Loyalty</strong>
+          <span>APoint Rewards</span>
         </div>
       </div>
 

@@ -263,7 +263,7 @@ export default function POSPanel({
                   {qrImageUrl ? (
                     <img
                       src={qrImageUrl}
-                      alt="Paynet checkout QR"
+                      alt="Paynet Loyalty checkout QR"
                       style={{
                         width: 240,
                         height: 240,

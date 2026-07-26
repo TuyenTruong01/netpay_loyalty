@@ -85,8 +85,8 @@ async function getWalletConnectProvider(chain) {
           enableExplorer: true,
         },
         metadata: {
-          name: 'Paynet APoint Loyalty',
-          description: 'Paynet USDC checkout',
+          name: 'Paynet Loyalty Loyalty',
+          description: 'Paynet Loyalty USDC checkout',
         url: typeof window !== 'undefined' ? window.location.origin : 'https://paynet.local',
         icons: typeof window !== 'undefined' ? [`${window.location.origin}/png/logo/paynet-logo.png`] : [],
       },

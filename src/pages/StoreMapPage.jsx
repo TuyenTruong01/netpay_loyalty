@@ -39,7 +39,7 @@ export default function StoreMapPage({ stores = [], onSelectStore }) {
         <header className="market-head">
           <div>
             <small>Public store map</small>
-            <h1>Nearby NetPay stores</h1>
+            <h1>Nearby Paynet Loyalty stores</h1>
           </div>
           <a className="market-map-link" href="/explore">Explore</a>
         </header>

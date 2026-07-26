@@ -17,7 +17,7 @@ function assertConfiguredAddress(address, label) {
   assertAddress(address, label);
 
   if (/^0x0{40}$/i.test(String(address).trim())) {
-    throw new Error(`${label} is not configured. Deploy NetPay V1 and set the address in .env.`);
+    throw new Error(`${label} is not configured. Deploy Paynet Loyalty V1 and set the address in .env.`);
   }
 }
 
@@ -74,7 +74,7 @@ export function encodeNetPayRecordPaymentData({
   const discountTokenUnits = rawAmountToArcUsdcUnits(rawFromPoints(Number(redeemed)));
 
   if (grossTokenUnits !== paidTokenUnits + discountTokenUnits) {
-    throw new Error('NetPay V1 payment totals do not match the APoint redemption discount.');
+    throw new Error('Paynet Loyalty V1 payment totals do not match the APoint redemption discount.');
   }
 
   return [

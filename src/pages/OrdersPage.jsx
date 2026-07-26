@@ -23,7 +23,7 @@ function buildReceiptHtml(order, taxRate) {
     <html><head><title>${order.code}</title><style>
       body{font-family:Arial,sans-serif;padding:24px;color:#111827} h1{margin:0 0 6px} table{width:100%;border-collapse:collapse;margin-top:18px} th,td{border-bottom:1px solid #e5e7eb;padding:8px;text-align:left} .right{text-align:right}.muted{color:#64748b}.total{font-size:18px;font-weight:800}.box{border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-top:16px}
     </style></head><body>
-      <h1>Paynet APoint Receipt</h1>
+      <h1>Paynet Loyalty Receipt</h1>
       <div class="muted">Invoice ${order.code}</div>
       <div class="box">
         <div><b>Status:</b> ${order.paymentStatus}</div>

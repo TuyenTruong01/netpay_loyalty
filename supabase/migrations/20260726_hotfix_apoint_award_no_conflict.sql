@@ -122,13 +122,3 @@ begin
   return jsonb_build_object('status', 'awarded', 'apoint_units', v_units, 'ledger_id', v_ledger_id);
 end;
 $$;
-
-select netpay_award_apoint_for_paid_order(
-  id,
-  customer_wallet,
-  null
-)
-from orders
-where code = 'SO-20260726-30079'
-  and status = 'paid'
-  and coalesce(apoint_awarded, false) = false;

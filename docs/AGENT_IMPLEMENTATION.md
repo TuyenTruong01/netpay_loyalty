@@ -1,4 +1,4 @@
-# NetPay agent implementation map
+# Paynet Loyalty agent implementation map
 
 ## Current scaffold
 

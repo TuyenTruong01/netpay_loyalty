@@ -1,9 +1,9 @@
-# NetPay V1 implementation status
+# Paynet Loyalty V1 implementation status
 
 Implemented:
 
 - Retained and reframed the desktop Admin Console.
-- Added Store Mobile demo for selected product publishing, product images, SKU/barcode, USDC price, NetPay quantity, visibility, deletion, orders, QR and a read-only store agent.
+- Added Store Mobile demo for selected product publishing, product images, SKU/barcode, USDC price, listed quantity, visibility, deletion, orders, QR and a read-only store agent.
 - Added Customer Mobile QR storefront demo with catalog, cart, cash/bank/USDC choices, APoint redemption preview and order creation.
 - Added three newly designed contracts: NetPayStoreRegistry, NetPayPaymentRegistry and APointLedger.
 - Added a new Arc deployment script and new environment variable names.

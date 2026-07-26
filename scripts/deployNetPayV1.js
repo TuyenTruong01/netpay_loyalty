@@ -2,7 +2,7 @@ const hre = require('hardhat');
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  console.log('Deploying NetPay V1 with:', deployer.address);
+  console.log('Deploying Paynet Loyalty V1 with:', deployer.address);
 
   const StoreRegistry = await hre.ethers.getContractFactory('NetPayStoreRegistry');
   const storeRegistry = await StoreRegistry.deploy(deployer.address);
