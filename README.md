@@ -130,11 +130,20 @@ For a fresh Supabase project:
 4. Deploy the exchange-rate Edge Function:
 
 ```bash
-./node_modules/@supabase/cli-windows-x64/bin/supabase.exe login
-./node_modules/@supabase/cli-windows-x64/bin/supabase.exe link --project-ref YOUR_PROJECT_REF
-./node_modules/@supabase/cli-windows-x64/bin/supabase.exe secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY="YOUR_SERVICE_ROLE_KEY"
+npx supabase functions deploy exchange-rate
+```
+
+On Windows, if the Supabase npm wrapper cannot find its binary, install the platform binary locally for your machine only:
+
+```bash
+npm install --save-dev --include=optional @supabase/cli-windows-x64
 ./node_modules/@supabase/cli-windows-x64/bin/supabase.exe functions deploy exchange-rate
 ```
+
+Do not commit `@supabase/cli-windows-x64` as a required dependency because Linux deploy hosts such as Vercel cannot install Windows-only packages.
 
 The Edge Function uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` server-side. Do not expose the service role key in frontend code.
 
