@@ -69,17 +69,8 @@ as $$
     select 1
     from stores
     where id = p_store_id
-      and lower(coalesce(p_actor_wallet, '')) in (
-        lower(coalesce(owner_wallet, '')),
-        lower(coalesce(receiver_wallet, ''))
-      )
-  )
-  or exists (
-    select 1
-    from store_staff
-    where store_id = p_store_id
-      and is_active = true
-      and lower(wallet_address) = lower(coalesce(p_actor_wallet, ''))
+      and status <> 'disabled'
+      and lower(coalesce(owner_wallet, '')) = lower(coalesce(p_actor_wallet, ''))
   );
 $$;
 

@@ -11,26 +11,6 @@ function one(result) {
   return result?.data || null;
 }
 
-function roleLabel(role = 'cashier') {
-  if (role === 'owner') return 'Owner';
-  if (role === 'manager') return 'Manager';
-  if (role === 'warehouse') return 'Warehouse';
-  if (role === 'accountant') return 'Accountant';
-  return 'Cashier';
-}
-
-function mapStaff(row) {
-  return {
-    id: row.id,
-    name: row.full_name,
-    role: roleLabel(row.role),
-    roleKey: row.role,
-    wallet: row.wallet_address,
-    avatar: row.avatar || (row.role === 'owner' ? 'SO' : 'ST'),
-    active: row.is_active !== false,
-  };
-}
-
 function mapProduct(row, warehouseMap = {}) {
   const warehouse = warehouseMap[row.id] || null;
   const localPriceMinor = Number(row.local_price_minor ?? row.sell_price ?? 0);
@@ -139,7 +119,7 @@ function paymentStatusForMethod(method) {
 }
 
 function paymentMethodWallet(method = {}, store = {}) {
-  return method.arc_wallet_address || method.receiver_wallet || store.receiverWallet || store.ownerWallet || '';
+  return store.ownerWallet || method.arc_wallet_address || method.receiver_wallet || '';
 }
 
 async function findStorePaymentMethod(store, methodName) {
@@ -209,7 +189,6 @@ export async function loadPaynetNetwork() {
   const [
     storeTypeRows,
     storeRows,
-    staffRows,
     productRows,
     warehouseRows,
     inventoryRows,
@@ -219,7 +198,6 @@ export async function loadPaynetNetwork() {
   ] = await Promise.all([
     supabase.from('store_types').select('*').order('sort_order'),
     supabase.from('stores').select('*, store_types(name, code), store_payment_methods(*)').order('created_at'),
-    supabase.from('store_staff').select('*').order('created_at'),
     supabase.from('products').select('*').order('name'),
     supabase.from('warehouses').select('*').order('created_at'),
     supabase.from('inventory').select('*, warehouses(name)').order('updated_at'),
@@ -229,7 +207,6 @@ export async function loadPaynetNetwork() {
   ]);
 
   const storeTypes = rows(storeTypeRows);
-  const staff = rows(staffRows);
   const products = rows(productRows);
   const warehouses = rows(warehouseRows);
   const inventory = rows(inventoryRows);
@@ -264,7 +241,7 @@ export async function loadPaynetNetwork() {
       bankAccountName: method.bank_account_name || '',
       bankAccountNumber: method.bank_account_number || '',
       bankQrImage: method.bank_qr_image || '',
-      arcWalletAddress: method.arc_wallet_address || store.receiver_wallet || '',
+      arcWalletAddress: store.owner_wallet || method.arc_wallet_address || method.receiver_wallet || '',
       cashInstructions: method.cash_instructions || '',
     }));
     return {
@@ -278,7 +255,7 @@ export async function loadPaynetNetwork() {
       accent: store.accent || '#2563eb',
       imageFolder: store.image_folder,
       ownerWallet: store.owner_wallet,
-      receiverWallet: store.receiver_wallet,
+      receiverWallet: store.owner_wallet,
       countryCode: store.country_code || 'VN',
       countryName: store.country_name || 'Vietnam',
       currencyCode: store.currency_code || 'VND',
@@ -299,7 +276,7 @@ export async function loadPaynetNetwork() {
       locationSource: store.location_source || 'custom',
       administrativeDivisionId: store.administrative_division_id || '',
       paymentMethods,
-      staffMembers: staff.filter(member => member.store_id === store.id).map(mapStaff),
+      staffMembers: [],
       categories: storeCategories(storeProducts),
       warehouses: warehouses.filter(warehouse => warehouse.store_id === store.id).map(mapWarehouse),
       products: storeProducts,
@@ -325,13 +302,6 @@ export async function createStoreRecord(draft) {
     status: 'active',
   };
   const store = one(await supabase.from('stores').insert(payload).select('*').single());
-  await supabase.from('store_staff').insert({
-    store_id: store.id,
-    full_name: `${store.name} Owner`,
-    role: 'owner',
-    wallet_address: store.owner_wallet,
-    avatar: 'SO',
-  });
   await supabase.from('warehouses').insert({
     store_id: store.id,
     name: 'Main Store',
@@ -392,15 +362,6 @@ export async function updateStoreOwnerRecord(storeId, ownerWallet) {
     updated_at: updatedAt,
   }).eq('id', storeId).select('*').single());
 
-  await supabase.from('store_staff').upsert({
-    store_id: storeId,
-    full_name: `${store.name} Owner`,
-    role: 'owner',
-    wallet_address: wallet,
-    avatar: 'SO',
-    is_active: true,
-    updated_at: updatedAt,
-  }, { onConflict: 'store_id,wallet_address' });
 
   await syncStoreDefaultPaymentReceiver(storeId, wallet);
   return store;
@@ -410,25 +371,6 @@ export async function updateStoreStatusRecord(storeId, status) {
   return one(await supabase.from('stores').update({ status, updated_at: new Date().toISOString() }).eq('id', storeId).select('*').single());
 }
 
-export async function saveStaffRecord(storeId, staffDraft) {
-  const payload = {
-    store_id: storeId,
-    full_name: staffDraft.name.trim(),
-    role: staffDraft.role,
-    wallet_address: staffDraft.wallet.trim(),
-    is_active: staffDraft.active !== false,
-    avatar: staffDraft.role === 'owner' ? 'SO' : 'ST',
-    updated_at: new Date().toISOString(),
-  };
-  if (staffDraft.id && !String(staffDraft.id).startsWith('staff-')) {
-    return one(await supabase.from('store_staff').update(payload).eq('id', staffDraft.id).select('*').single());
-  }
-  return one(await supabase.from('store_staff').insert(payload).select('*').single());
-}
-
-export async function disableStaffRecord(staffId) {
-  return one(await supabase.from('store_staff').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', staffId).select('*').single());
-}
 
 export async function saveProductRecord(storeId, product) {
   const payload = {
@@ -535,7 +477,7 @@ export async function createCheckoutOrder({
     store_id: store.id,
     network_id: method?.network_id || null,
     token_id: method?.token_id || null,
-    receiver_wallet: method?.receiver_wallet || store.receiverWallet,
+    receiver_wallet: method?.receiver_wallet || store.ownerWallet,
     amount: total,
     status: 'pending',
   });

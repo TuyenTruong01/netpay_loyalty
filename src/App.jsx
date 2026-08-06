@@ -15,7 +15,6 @@ import ProductsPage from './pages/ProductsPage.jsx';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage.jsx';
 import RewardsPage from './pages/RewardsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
-import StaffPage from './pages/StaffPage.jsx';
 import SystemAdminPage from './pages/SystemAdminPage.jsx';
 import WarehousePage from './pages/WarehousePage.jsx';
 import StoreMobilePage from './pages/StoreMobilePage.jsx';
@@ -31,11 +30,9 @@ import {
   createCheckoutOrder,
   createStorefrontOrder,
   createStoreRecord,
-  disableStaffRecord,
   loadCheckoutPaymentStatus,
   loadPaynetNetwork,
   saveProductRecord,
-  saveStaffRecord,
   updateProductStatusRecord,
   updateStoreOwnerRecord,
   updateStoreRecord,
@@ -47,11 +44,9 @@ import { hasSupabaseConfig } from './lib/supabaseClient.js';
 import { pointsFromRaw, rawFromPoints, rawFromUSDC, toUSDC } from './utils/format.js';
 import { apointUnitsFromUsdc, convertLocalToUsdc, localToMinor, minorToLocal } from './services/exchangeRateService.js';
 import {
-  applyRoleAccessToStores,
   buildStoreState,
   initialNetworkStores,
   normalizeWallet,
-  roleAccessConfig,
   resolveNetworkRole,
 } from './utils/storeNetwork.js';
 
@@ -119,13 +114,11 @@ function defaultCountryFields(store = {}) {
   };
 }
 
-const STAFF_ALLOWED_PAGES = ['pos', 'orders', 'customers', 'inventory'];
 const OWNER_ALLOWED_PAGES = [
   'dashboard',
   'pos',
   'orders',
   'customers',
-  'staff',
   'products',
   'inventory',
   'points',
@@ -138,7 +131,6 @@ const OWNER_ALLOWED_PAGES = [
 const SYSTEM_ADMIN_ALLOWED_PAGES = [
   'admin',
   'dashboard',
-  'staff',
   'settings',
   'orders',
   'customers',
@@ -179,7 +171,7 @@ function encodeDemoCheckout(order) {
 export default function App() {
   const [page, setPage] = useState('dashboard');
   const [query, setQuery] = useState('');
-  const [stores, setStores] = useState(() => applyRoleAccessToStores(initialNetworkStores));
+  const [stores, setStores] = useState(initialNetworkStores);
   const [networkCustomers, setNetworkCustomers] = useState([]);
   const [networkPointsHistory, setNetworkPointsHistory] = useState([]);
   const [selectedStoreId, setSelectedStoreId] = useState(initialNetworkStores[0]?.id || '');
@@ -209,7 +201,7 @@ export default function App() {
     try {
       const result = await loadPaynetNetwork();
       if (result?.stores?.length) {
-        const accessStores = applyRoleAccessToStores(result.stores, roleAccessConfig);
+        const accessStores = result.stores;
         setStores(accessStores);
         setNetworkCustomers(result.customers || []);
         setNetworkPointsHistory(result.pointsHistory || []);
@@ -269,7 +261,6 @@ export default function App() {
     () => resolveNetworkRole(
       stores,
       currentWallet,
-      roleAccessConfig
     ),
     [stores, currentWallet]
   );
@@ -282,7 +273,7 @@ export default function App() {
     if (isSystemAdmin) return SYSTEM_ADMIN_ALLOWED_PAGES;
     if (isGuest || !connected) return [];
     if (isStoreOwnerRole(roleContext.roleKey)) return OWNER_ALLOWED_PAGES;
-    return STAFF_ALLOWED_PAGES;
+    return [];
   }, [connected, demoMode, isGuest, isSystemAdmin, roleContext.roleKey]);
 
   useEffect(() => {
@@ -303,8 +294,7 @@ export default function App() {
     if (roleStore?.id) {
       setSelectedStoreId(roleStore.id);
       setPage(current => {
-        const pages = isStoreOwnerRole(roleContext.roleKey) ? OWNER_ALLOWED_PAGES : STAFF_ALLOWED_PAGES;
-        return pages.includes(current) ? current : 'pos';
+        return OWNER_ALLOWED_PAGES.includes(current) ? current : 'dashboard';
       });
       return;
     }
@@ -332,7 +322,6 @@ export default function App() {
     [activeStore]
   );
 
-  const staffMembers = data.staffMembers || [];
   const activeStaff = roleContext.member;
   const displayStaff = demoMode
     ? { name: 'Demo Mode', role: 'Demo', roleKey: 'demo', wallet: 'Local demo session', avatar: 'DM' }
@@ -354,7 +343,6 @@ export default function App() {
   const customers = networkCustomers.length ? networkCustomers : data.customers;
   const visibleStores = isSystemAdmin ? stores : activeStore ? [activeStore] : [];
   const safeReceiverWallet = isGuest ? '' : data.receiverWallet;
-  const safeStaffMembers = isGuest ? [] : staffMembers;
   const selectedCustomer = customers.find(customer => customer.id === customerId) || customers[0] || null;
   const cartRows = useMemo(() => cart.map(item => {
     const product = ensureStoreProducts(activeStore).find(row => row.id === item.id);
@@ -471,7 +459,7 @@ export default function App() {
       storeId: activeStore.id,
       storeName: activeStore.name,
       storeBranch: activeStore.branch,
-      receiverWallet: activeStore.receiverWallet,
+      receiverWallet: activeStore.ownerWallet,
       customer: selectedCustomer?.name || 'Guest',
       customerWallet: selectedCustomer?.wallet || '',
       subtotal,
@@ -529,7 +517,7 @@ export default function App() {
           txHash: '',
           rawResponse: {
             mode: 'manual-cash-payment',
-            receiver_wallet: activeStore?.receiverWallet || '',
+            receiver_wallet: activeStore?.ownerWallet || '',
             payable_raw: total,
             redeemed_points: pointsUsed,
             redeemed_value_raw: pointsDiscount,
@@ -644,56 +632,6 @@ export default function App() {
     }
   }
 
-  async function saveStaffMember(staffDraft) {
-    if (!canManageStore) return alert('Only the system admin or store owner can edit staff.');
-    const wallet = staffDraft.wallet.trim();
-    const normalized = {
-      id: staffDraft.id || `staff-${Date.now()}`,
-      name: staffDraft.name.trim(),
-      role: titleCaseRole(staffDraft.role),
-      roleKey: staffDraft.role,
-      wallet,
-      avatar: staffDraft.role === 'owner' ? 'SO' : 'ST',
-      active: staffDraft.active !== false,
-    };
-
-    updateActiveStore(store => {
-      const existing = (store.staffMembers || []).some(member => normalizeWallet(member.wallet) === normalizeWallet(wallet));
-      return {
-        ...store,
-        staffMembers: existing
-          ? store.staffMembers.map(member => normalizeWallet(member.wallet) === normalizeWallet(wallet) ? { ...member, ...normalized } : member)
-          : [normalized, ...(store.staffMembers || [])],
-      };
-    });
-    if (hasSupabaseConfig) {
-      try {
-        await saveStaffRecord(activeStore.id, staffDraft);
-        await reloadNetwork();
-      } catch (error) {
-        alert(error.message || error);
-      }
-    }
-  }
-
-  async function disableStaffMember(member) {
-    if (!canManageStore) return alert('Only the system admin or store owner can edit staff.');
-    if (normalizeWallet(member.wallet) === normalizeWallet(activeStore.ownerWallet)) return alert('The store owner wallet cannot be disabled from the store staff page.');
-    if (!confirm(`Disable ${member.name || member.wallet}?`)) return;
-
-    updateActiveStore(store => ({
-      ...store,
-      staffMembers: (store.staffMembers || []).map(item => normalizeWallet(item.wallet) === normalizeWallet(member.wallet) ? { ...item, active: false } : item),
-    }));
-    if (hasSupabaseConfig && member.id && !String(member.id).startsWith('staff-')) {
-      try {
-        await disableStaffRecord(member.id);
-        await reloadNetwork();
-      } catch (error) {
-        alert(error.message || error);
-      }
-    }
-  }
 
   async function handleConnectWallet() {
     try {
@@ -747,9 +685,6 @@ export default function App() {
       imageFolder: `/png/stores/${storeSlug}/products`,
       ownerWallet: draft.ownerWallet.trim(),
       receiverWallet: draft.ownerWallet.trim(),
-      staffMembers: [
-        { id: `${id}-owner`, name: `${draft.name.trim()} Owner`, role: 'Owner', roleKey: 'owner', wallet: draft.ownerWallet.trim(), avatar: 'SO', active: true },
-      ],
       categories: ['All', 'Popular', 'Food', 'Drinks'],
       warehouses: [{ id: `${id}-main`, name: 'Main Store', address: draft.branch.trim() || 'Main Branch', status: 'active', active: true }],
       products: [],
@@ -765,16 +700,6 @@ export default function App() {
   function handleUpdateStore(storeId, draft) {
     setStores(current => current.map(store => {
       if (store.id !== storeId) return store;
-      const ownerMember = {
-        id: `${store.id}-owner`,
-        name: `${draft.name || store.name} Owner`,
-        role: 'Owner',
-        roleKey: 'owner',
-        wallet: draft.ownerWallet,
-        avatar: 'SO',
-        active: true,
-      };
-      const staffWithoutOldOwner = (store.staffMembers || []).filter(member => normalizeWallet(member.wallet) !== normalizeWallet(store.ownerWallet));
 
       return {
         ...store,
@@ -785,7 +710,6 @@ export default function App() {
         ownerWallet: draft.ownerWallet,
         receiverWallet: draft.ownerWallet,
         imageFolder: store.imageFolder || `/png/stores/${slugifyStoreName(draft.name)}/products`,
-        staffMembers: [ownerMember, ...staffWithoutOldOwner],
       };
     }));
     if (hasSupabaseConfig) {
@@ -807,21 +731,10 @@ export default function App() {
   function handleUpdateStoreOwner(storeId, wallet) {
     setStores(current => current.map(store => {
       if (store.id !== storeId) return store;
-      const ownerMember = {
-        id: `${store.id}-owner`,
-        name: `${store.name} Owner`,
-        role: 'Owner',
-        roleKey: 'owner',
-        wallet,
-        avatar: 'SO',
-        active: true,
-      };
-      const staffWithoutOldOwner = (store.staffMembers || []).filter(member => normalizeWallet(member.wallet) !== normalizeWallet(store.ownerWallet));
       return {
         ...store,
         ownerWallet: wallet,
         receiverWallet: wallet,
-        staffMembers: [ownerMember, ...staffWithoutOldOwner],
       };
     }));
     if (hasSupabaseConfig) {
@@ -917,9 +830,9 @@ export default function App() {
       ...store,
       ...geo,
       paymentMethods: store.paymentMethods?.length ? store.paymentMethods : [
-        { method: 'usdc_arc', isEnabled: true, arcWalletAddress: store.receiverWallet || store.ownerWallet || '' },
+        { method: 'usdc_arc', isEnabled: true, arcWalletAddress: store.ownerWallet || '' },
         { method: 'bank_transfer', isEnabled: true, bankName: 'Store bank', bankAccountName: store.name || '', bankAccountNumber: '' },
-        { method: 'cash', isEnabled: true, cashInstructions: 'Pay at counter. Store staff confirms after receiving cash.' },
+        { method: 'cash', isEnabled: true, cashInstructions: 'Pay at counter. Store owner confirms after receiving cash.' },
       ],
       products: ensureStoreProducts(store).map(product => ({
         ...product,
@@ -1107,8 +1020,8 @@ export default function App() {
       return (
         <section className="panel full-page-panel locked-access-panel">
           <div className="locked-box">
-            <strong>Wallet not whitelisted</strong>
-            <span>This wallet is not assigned as a system admin, store owner, or store staff wallet.</span>
+            <strong>Wallet has no store access</strong>
+            <span>This wallet is not assigned as a system admin or store owner wallet.</span>
           </div>
         </section>
       );
@@ -1157,7 +1070,6 @@ export default function App() {
     if (page === 'dashboard') return <DashboardPage {...common} />;
     if (page === 'orders') return <OrdersPage {...common} />;
     if (page === 'customers') return <CustomersPage customers={customers} />;
-    if (page === 'staff') return <StaffPage staffMembers={safeStaffMembers} isManager={canManageStore} currentWallet={currentWallet} onSaveStaff={saveStaffMember} onDisableStaff={disableStaffMember} />;
     if (page === 'products') return <ProductsPage products={data.products} setEditingProduct={setEditingProduct} canManage={canManageStore} onUpdateProductStatus={handleUpdateProductStatus} onDeleteProduct={deleteProduct} />;
     if (page === 'inventory') return <InventoryPage products={data.products} warehouses={data.warehouses || []} inventory={data.inventory || []} canManage={canManageStore} onAddInventoryProduct={handleAddInventoryProduct} onUpdateInventoryWarehouse={handleUpdateInventoryWarehouse} onDeleteInventoryItem={handleDeleteInventoryItem} />;
     if (page === 'points') {

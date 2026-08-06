@@ -11,8 +11,7 @@ import { shortAddress } from '../utils/format.js';
 const blankProduct = { name: '', sku: '', barcode: '', category: 'Other', localPrice: 0, listedQuantity: 0, description: '', image: '', visible: true };
 
 function storeWallets(store = {}) {
-  const staffWallets = (store.staffMembers || []).filter(member => member.active !== false).map(member => member.wallet);
-  return [store.ownerWallet, store.receiverWallet, ...staffWallets].filter(Boolean).map(normalizeWallet);
+  return [store.ownerWallet].filter(Boolean).map(normalizeWallet);
 }
 
 function coerceNumberOrNull(value) {
@@ -174,7 +173,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
 
   function requireWalletAccess() {
     if (!canManage) {
-      setWalletError('Connect the owner or assigned staff wallet before changing store data.');
+      setWalletError('Connect the store owner wallet before changing store data.');
       return false;
     }
     return true;
@@ -513,7 +512,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
               </section>
               {profileWarning && <p className="location-warning"><AlertTriangle size={15} />{profileWarning}</p>}
               {profileMessage && <p className="location-success">{profileMessage}</p>}
-              {!canManage && <div className="mobile-lock-note"><Lock size={14} /> Read-only preview. Connect an owner or assigned staff wallet to save.</div>}
+              {!canManage && <div className="mobile-lock-note"><Lock size={14} /> Read-only preview. Connect the store owner wallet to save.</div>}
               <button className="mobile-action" type="button" onClick={locateAddress}><LocateFixed />Locate address<ChevronRight /></button>
               <button className="mobile-action" type="button" disabled><MapPin />Use map pin<ChevronRight /></button>
               <button className="primary-mobile" type="submit" disabled={!canManage}><Save />{canManage ? 'Save profile' : 'Connect wallet to save'}</button>
@@ -523,7 +522,7 @@ export default function StoreMobilePage({ store, stores, onSelectStore, onSavePr
           {tab === 'payments' && (
             <section>
               <div className="mobile-section-head"><div><small>Payment methods</small><h2>Store settlement</h2></div></div>
-              {(store.paymentMethods || []).map(method => <article className="order-card" key={method.method}><div><strong>{method.method}</strong><span>{method.isEnabled === false ? 'Disabled' : 'Enabled'}</span></div><div><strong>{shortAddress(method.arcWalletAddress || method.bankAccountNumber || store.receiverWallet)}</strong><span>{method.bankName || method.cashInstructions || 'Arc USDC wallet'}</span></div></article>)}
+              {(store.paymentMethods || []).map(method => <article className="order-card" key={method.method}><div><strong>{method.method}</strong><span>{method.isEnabled === false ? 'Disabled' : 'Enabled'}</span></div><div><strong>{shortAddress(method.arcWalletAddress || method.bankAccountNumber || store.ownerWallet)}</strong><span>{method.bankName || method.cashInstructions || 'Arc USDC wallet'}</span></div></article>)}
               {!store.paymentMethods?.length && <div className="empty-mobile">No payment methods configured yet.</div>}
             </section>
           )}

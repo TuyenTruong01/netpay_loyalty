@@ -649,25 +649,10 @@ with stores_seed as (
 )
 insert into public.store_wallets(store_id, wallet_address, wallet_role, is_active)
 select id, owner_wallet, 'owner', true from stores_seed
-union all
-select id, receiver_wallet, 'receiver', true from stores_seed
 on conflict (store_id, wallet_address, wallet_role) do update set is_active = true;
 
-with stores_seed as (
-  select id, slug, owner_wallet from public.stores
-)
-insert into public.store_staff(store_id, full_name, role, wallet_address, avatar, is_active)
-select id, 'Grocery Owner', 'owner', owner_wallet, 'GO', true from stores_seed where slug = 'minh-chau-grocery'
-union all select id, 'Grocery Cashier', 'cashier', '0xCb55bA6B93A54Ae9406710620cD0686BDce4522d', 'GC', true from stores_seed where slug = 'minh-chau-grocery'
-union all select id, 'Cafe Owner', 'owner', owner_wallet, 'CO', true from stores_seed where slug = 'morning-arc-cafe'
-union all select id, 'Cafe Barista', 'cashier', '0x8F524d30238C1a5734ddd1Fc7470Fe72204539E8', 'CB', true from stores_seed where slug = 'morning-arc-cafe'
-union all select id, 'Noodle Owner', 'owner', owner_wallet, 'NO', true from stores_seed where slug = 'golden-bowl-noodles'
-union all select id, 'Noodle Cashier', 'cashier', '0x34104D0684434918EFa4B87eeC291C38ae25B8A1', 'NC', true from stores_seed where slug = 'golden-bowl-noodles'
-on conflict (store_id, wallet_address) do update set
-  full_name = excluded.full_name,
-  role = excluded.role,
-  avatar = excluded.avatar,
-  is_active = excluded.is_active;
+-- store_staff is retained only for historical foreign-key compatibility.
+-- The active authorization model uses stores.owner_wallet directly.
 
 insert into public.store_settings(store_id)
 select id from public.stores

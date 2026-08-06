@@ -94,7 +94,7 @@ export default function POSPanel({
             fontWeight: 700,
           }}
         >
-          {posLockMessage || 'Connect a whitelisted staff wallet to use POS.'}
+          {posLockMessage || 'Connect the store owner wallet to use POS.'}
         </div>
       )}
 
@@ -281,7 +281,7 @@ export default function POSPanel({
 
                 <div className="payment-info">
                   <p><span>Network</span><strong>Store payment network</strong></p>
-                  <p><span>Receiver</span><strong>{shortAddress(receiverWallet)}</strong></p>
+                  <p><span>Store wallet</span><strong>{shortAddress(receiverWallet)}</strong></p>
                   <p><span>{isPaid ? 'Paid Amount' : 'Payable'}</span><strong>{money(finalPayable)}</strong></p>
                   {isPaid && <p><span>Payment Type</span><strong>{paidWithWallet ? 'Wallet USDC' : 'Cash'}</strong></p>}
                   {isPaid && checkoutPayment?.pointsUsed > 0 && (

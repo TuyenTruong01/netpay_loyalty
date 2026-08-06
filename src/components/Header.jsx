@@ -1,7 +1,17 @@
 import { Bell, LogOut, Menu, Search, Wallet } from 'lucide-react';
 import { shortAddress } from '../utils/format.js';
-import { rolePermissionLabel } from '../utils/roles.js';
 import { paymentChains } from '../chains/index.js';
+
+function getRoleLabel(roleLabel) {
+  switch (roleLabel) {
+    case 'system_admin':
+      return 'System Admin';
+    case 'store_owner':
+      return 'Store Owner';
+    default:
+      return 'Guest';
+  }
+}
 
 export default function Header({
   query,
@@ -17,7 +27,7 @@ export default function Header({
   roleLabel,
 }) {
   const displayWallet = currentWallet || staff?.wallet || '';
-  const staffName = staff?.name || (isManager ? 'Store Manager' : 'Paynet Loyalty Staff');
+  const accountName = staff?.name || getRoleLabel(roleLabel);
   const selectedNetwork = paymentChains.some(chain => chain.label === network) ? network : 'Arc Testnet';
 
   return (
@@ -64,11 +74,11 @@ export default function Header({
 
           <div
             className="user-menu"
-            title={`${rolePermissionLabel(isManager, roleLabel)}\nWallet: ${displayWallet}`}
+            title={`${getRoleLabel(roleLabel)}\nWallet: ${displayWallet}`}
           >
             <div className="mini-avatar">{staff?.avatar || 'U'}</div>
             <div>
-              <strong>{staffName}</strong>
+              <strong>{accountName}</strong>
               <span>{shortAddress(displayWallet)}</span>
             </div>
           </div>

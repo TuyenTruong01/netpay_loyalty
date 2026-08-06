@@ -15,7 +15,7 @@ Paynet Loyalty solves this by turning a merchant wallet and QR code into a compl
 - Each merchant has a wallet-linked storefront with products, local prices, inventory, payment methods, and order history.
 - Customers scan a Paynet Loyalty QR or open `/s/:storeSlug`, browse products, build a cart, and choose cash, bank transfer, or USDC on Arc.
 - USDC checkout records a local-currency to USDC exchange-rate snapshot before payment.
-- Cash and bank transfer orders remain `awaiting_confirmation` until an owner/staff wallet confirms them.
+- Cash and bank transfer orders remain `awaiting_confirmation` until the store owner wallet confirms them.
 - Arc USDC orders become paid only after wallet payment and Paynet Loyalty V1 registry confirmation.
 - Paid orders award APoint once, with audit logs and duplicate-safe reward logic.
 
@@ -42,18 +42,29 @@ Agents do not sign wallet transactions, move merchant funds, delete products dir
 ## Current Working Features
 
 - Desktop admin and operations dashboard.
-- Store owner/staff wallet access.
+- One primary wallet per store for owner access and payment receipt.
 - Store Mobile page at `/store-mobile`.
 - Customer storefront at `/shop` and `/s/:storeSlug`.
 - Explore and map views for active stores.
 - Product publishing with local currency prices and Paynet Loyalty-listed quantity.
 - QR storefront link/poster flow.
 - Real Supabase orders, order items, payments, audit logs, and APoint ledger rows.
-- Cash and bank transfer checkout with owner/staff confirmation.
+- Cash and bank transfer checkout with store owner confirmation.
 - USDC on Arc checkout with wallet transaction and Paynet Loyalty V1 registry transaction.
 - Supabase Edge Function `exchange-rate` for USDC/local-currency snapshots.
 - APoint awarding after paid orders with idempotency protection.
 - Presentation deck at `docs/Paynet_Loyalty_Checkpoint_2.pptx`.
+
+## Single-Wallet Store Model
+
+Each store has one primary wallet stored in `stores.owner_wallet`. The same wallet is used to:
+
+- authorize the store owner in Store Mobile;
+- receive USDC payments on Arc;
+- confirm cash and bank-transfer orders;
+- manage products, inventory, and store settings.
+
+Separate receiver and staff wallets are not part of the active authorization flow. Legacy database fields remain synchronized temporarily for backward compatibility with existing checkout records.
 
 ## Architecture
 
@@ -224,7 +235,7 @@ npm run build
 ## Main Demo Flow
 
 1. Open `/store-mobile`.
-2. Connect an owner/staff wallet or use read-only preview for navigation.
+2. Connect the store owner wallet or use read-only preview for navigation.
 3. Confirm store payment methods and listed products.
 4. Open `/shop` or `/s/minh-chau-grocery`.
 5. Add products to cart.

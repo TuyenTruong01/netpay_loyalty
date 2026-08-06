@@ -31,7 +31,6 @@ export default function SystemAdminPage({
 
   const activeStores = stores.filter(store => store.status !== 'disabled');
   const disabledStores = stores.filter(store => store.status === 'disabled');
-  const totalStaff = stores.reduce((sum, store) => sum + (store.staffMembers || []).filter(member => member.active !== false).length, 0);
   const totalRevenue = stores.reduce((sum, store) => sum + storeRevenue(store), 0);
 
   const selectedStore = useMemo(
@@ -87,7 +86,7 @@ export default function SystemAdminPage({
       <div className="stats-grid four">
         <article className="stat-card"><span className="green">Active Stores</span><strong>{activeStores.length}</strong><small>{disabledStores.length} disabled</small></article>
         <article className="stat-card"><span className="blue">Store Wallets</span><strong>{stores.length}</strong><small>Owner wallets under admin control</small></article>
-        <article className="stat-card"><span className="orange">Staff Wallets</span><strong>{totalStaff}</strong><small>Across all stores</small></article>
+        <article className="stat-card"><span className="orange">Single-wallet Model</span><strong>1</strong><small>Primary wallet per store</small></article>
         <article className="stat-card"><span className="green">Network Revenue</span><strong>{money(totalRevenue)}</strong><small>Paid USDC volume</small></article>
       </div>
 
@@ -112,7 +111,7 @@ export default function SystemAdminPage({
 
               <div className="admin-store-metrics">
                 <p><span>Status</span><strong className={isDisabled ? 'red' : 'green'}>{isDisabled ? 'Disabled' : 'Active'}</strong></p>
-                <p><span>Staff</span><strong>{(store.staffMembers || []).filter(member => member.active !== false).length}</strong></p>
+                <p><span>Wallets</span><strong>1</strong></p>
                 <p><span>Products</span><strong>{(store.products || []).filter(product => product.active !== false).length}</strong></p>
               </div>
 
@@ -187,7 +186,7 @@ export default function SystemAdminPage({
         <div className="panel-head">
           <div>
             <p className="eyebrow">Store Directory</p>
-            <h2>Owner and staff wallets</h2>
+            <h2>Store wallets</h2>
           </div>
         </div>
         <table className="data-table">
@@ -197,7 +196,7 @@ export default function SystemAdminPage({
               <th>Store</th>
               <th>Type</th>
               <th>Owner Wallet</th>
-              <th>Staff Wallets</th>
+              
               <th>Status</th>
             </tr>
           </thead>
@@ -208,13 +207,6 @@ export default function SystemAdminPage({
                 <td><strong>{store.name}</strong><br /><span className="muted-cell">{store.branch}</span></td>
                 <td>{store.type}</td>
                 <td><code>{shortAddress(store.ownerWallet)}</code></td>
-                <td>
-                  <span className="wallet-list">
-                    {(store.staffMembers || []).map(member => (
-                      <code key={member.id || member.wallet} title={member.wallet}>{member.name}: {shortAddress(member.wallet)}</code>
-                    ))}
-                  </span>
-                </td>
                 <td><span className={`badge ${store.status === 'disabled' ? 'bad' : 'ok'}`}>{store.status === 'disabled' ? 'Disabled' : 'Active'}</span></td>
               </tr>
             ))}

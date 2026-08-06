@@ -1,119 +1,11 @@
-import roleAccess from '../config/roleAccess.json';
-
 export const SYSTEM_ADMIN_WALLET = '0x8e23Ca66E4E4d68c6C52Ed651d8487320B3d57d2';
-
-export const STORE_WALLETS = {
-  grocery: {
-    owner: '0x863FBd9eaC8D1001828B2502A71d9520Cf85636D',
-    staff: '0xCb55bA6B93A54Ae9406710620cD0686BDce4522d',
-  },
-  coffee: {
-    owner: '0xc8044822b1cBF8416489e5Fc676c7746E2515aC6',
-    staff: '0x8F524d30238C1a5734ddd1Fc7470Fe72204539E8',
-  },
-  noodles: {
-    owner: '0x1e09B25731eef93646A36aD03E20147D3dfF3214',
-    staff: '0x34104D0684434918EFa4B87eeC291C38ae25B8A1',
-  },
-};
 
 export const walletOptions = [
   { label: 'System Admin', wallet: SYSTEM_ADMIN_WALLET },
-  { label: 'Grocery Owner', wallet: STORE_WALLETS.grocery.owner },
-  { label: 'Grocery Staff', wallet: STORE_WALLETS.grocery.staff },
-  { label: 'Coffee Owner', wallet: STORE_WALLETS.coffee.owner },
-  { label: 'Coffee Staff', wallet: STORE_WALLETS.coffee.staff },
-  { label: 'Noodle Owner', wallet: STORE_WALLETS.noodles.owner },
-  { label: 'Noodle Staff', wallet: STORE_WALLETS.noodles.staff },
+  { label: 'Minh Chau Grocery', wallet: '0x863FBd9eaC8D1001828B2502A71d9520Cf85636D' },
+  { label: 'Morning Cafe', wallet: '0xc8044822b1cBF8416489e5Fc676c7746E2515aC6' },
+  { label: 'Golden Bowl Noodles', wallet: '0x1e09B25731eef93646A36aD03E20147D3dfF3214' },
 ];
-
-export const roleAccessConfig = roleAccess;
-
-function staffRoleLabel(role = 'cashier') {
-  if (role === 'owner') return 'Owner';
-  if (role === 'manager') return 'Manager';
-  if (role === 'warehouse') return 'Warehouse';
-  if (role === 'accountant') return 'Accountant';
-  return 'Cashier';
-}
-
-function avatarFromName(name = 'ST') {
-  return String(name || 'ST')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0])
-    .join('')
-    .toUpperCase() || 'ST';
-}
-
-export function applyRoleAccessToStores(stores = [], access = roleAccessConfig) {
-  const entries = access?.stores || [];
-
-  return stores.map(store => {
-    const entry = entries.find(item => item.storeSlug === store.slug || item.storeId === store.id);
-    if (!entry) return store;
-
-    const ownerWallet = entry.owner?.wallet || store.ownerWallet;
-    const ownerMember = {
-      id: `${store.id}-json-owner`,
-      name: entry.owner?.name || `${store.name} Owner`,
-      role: 'Owner',
-      roleKey: 'owner',
-      wallet: ownerWallet,
-      avatar: avatarFromName(entry.owner?.name || 'Owner'),
-      active: true,
-    };
-
-    const staffMembers = (entry.staff || []).map((member, index) => ({
-      id: `${store.id}-json-staff-${index}`,
-      name: member.name || `Staff ${index + 1}`,
-      role: staffRoleLabel(member.role),
-      roleKey: member.role || 'cashier',
-      wallet: member.wallet,
-      avatar: avatarFromName(member.name || 'Staff'),
-      active: member.active !== false,
-    })).filter(member => member.wallet);
-
-    return {
-      ...store,
-      ownerWallet,
-      receiverWallet: entry.receiverWallet || ownerWallet || store.receiverWallet,
-      staffMembers: [ownerMember, ...staffMembers],
-    };
-  });
-}
-
-export function roleAccessWalletOptions(access = roleAccessConfig, stores = []) {
-  const storeNameBySlug = Object.fromEntries(stores.map(store => [store.slug, store.name]));
-  const adminOptions = (access?.systemAdmins || []).map(admin => ({
-    label: admin.label || 'System Admin',
-    wallet: admin.wallet,
-  }));
-
-  const storeOptions = (access?.stores || []).flatMap(entry => {
-    const storeName = storeNameBySlug[entry.storeSlug] || entry.storeSlug || 'Store';
-    const ownerOption = entry.owner?.wallet ? [{
-      label: `${storeName} Owner`,
-      wallet: entry.owner.wallet,
-    }] : [];
-    const staffOptions = (entry.staff || []).map(member => ({
-      label: `${storeName} ${staffRoleLabel(member.role)}`,
-      wallet: member.wallet,
-    }));
-
-    return [...ownerOption, ...staffOptions];
-  });
-
-  return [...adminOptions, ...storeOptions].filter(option => option.wallet);
-}
-
-export function visibleStoresForWallet(stores = [], wallet = '', access = roleAccessConfig) {
-  const role = resolveNetworkRole(stores, wallet, access);
-  if (role.roleKey === 'system_admin') return stores;
-  if (role.store) return [role.store];
-  return [];
-}
 
 const sharedCustomers = [
   {
@@ -150,12 +42,8 @@ export const initialNetworkStores = [
     status: 'active',
     accent: '#5b35f5',
     imageFolder: '/png/stores/minh-chau-grocery/products',
-    ownerWallet: STORE_WALLETS.grocery.owner,
-    receiverWallet: STORE_WALLETS.grocery.owner,
-    staffMembers: [
-      { id: 'grocery-owner', name: 'Grocery Owner', role: 'Owner', roleKey: 'owner', wallet: STORE_WALLETS.grocery.owner, avatar: 'GO', active: true },
-      { id: 'grocery-staff', name: 'Grocery Cashier', role: 'Cashier', roleKey: 'cashier', wallet: STORE_WALLETS.grocery.staff, avatar: 'GC', active: true },
-    ],
+    ownerWallet: '0x863FBd9eaC8D1001828B2502A71d9520Cf85636D',
+    receiverWallet: '0x863FBd9eaC8D1001828B2502A71d9520Cf85636D',
     categories: ['All', 'Drinks', 'Food', 'Condiments', 'Household', 'Snacks'],
     warehouses: [{ id: 'store-grocery-main', name: 'Main Store', address: 'Da Nang Branch', status: 'active', active: true }],
     products: [
@@ -174,12 +62,8 @@ export const initialNetworkStores = [
     status: 'active',
     accent: '#0f766e',
     imageFolder: '/png/stores/morning-arc-cafe/products',
-    ownerWallet: STORE_WALLETS.coffee.owner,
-    receiverWallet: STORE_WALLETS.coffee.owner,
-    staffMembers: [
-      { id: 'coffee-owner', name: 'Cafe Owner', role: 'Owner', roleKey: 'owner', wallet: STORE_WALLETS.coffee.owner, avatar: 'CO', active: true },
-      { id: 'coffee-staff', name: 'Cafe Barista', role: 'Cashier', roleKey: 'cashier', wallet: STORE_WALLETS.coffee.staff, avatar: 'CB', active: true },
-    ],
+    ownerWallet: '0xc8044822b1cBF8416489e5Fc676c7746E2515aC6',
+    receiverWallet: '0xc8044822b1cBF8416489e5Fc676c7746E2515aC6',
     categories: ['All', 'Coffee', 'Tea', 'Bakery', 'Cold Drinks'],
     warehouses: [{ id: 'store-coffee-main', name: 'Main Counter', address: 'Central Counter', status: 'active', active: true }],
     products: [
@@ -198,12 +82,8 @@ export const initialNetworkStores = [
     status: 'active',
     accent: '#b45309',
     imageFolder: '/png/stores/golden-bowl-noodles/products',
-    ownerWallet: STORE_WALLETS.noodles.owner,
-    receiverWallet: STORE_WALLETS.noodles.owner,
-    staffMembers: [
-      { id: 'noodle-owner', name: 'Noodle Owner', role: 'Owner', roleKey: 'owner', wallet: STORE_WALLETS.noodles.owner, avatar: 'NO', active: true },
-      { id: 'noodle-staff', name: 'Noodle Cashier', role: 'Cashier', roleKey: 'cashier', wallet: STORE_WALLETS.noodles.staff, avatar: 'NC', active: true },
-    ],
+    ownerWallet: '0x1e09B25731eef93646A36aD03E20147D3dfF3214',
+    receiverWallet: '0x1e09B25731eef93646A36aD03E20147D3dfF3214',
     categories: ['All', 'Noodles', 'Sides', 'Drinks', 'Toppings'],
     warehouses: [{ id: 'store-noodles-main', name: 'Main Kitchen', address: 'Kitchen 01', status: 'active', active: true }],
     products: [
@@ -220,36 +100,26 @@ export function normalizeWallet(wallet = '') {
   return String(wallet || '').trim().toLowerCase();
 }
 
-export function isSystemAdmin(wallet = '', access = roleAccessConfig) {
-  const normalized = normalizeWallet(wallet);
-  if (!normalized) return false;
-  const systemAdmins = Array.isArray(access) ? access : access?.systemAdmins;
-
-  return (systemAdmins || []).some(admin => {
-    const adminWallet = typeof admin === 'string' ? admin : admin?.wallet;
-    const normalizedAdminWallet = normalizeWallet(adminWallet);
-    return Boolean(normalizedAdminWallet) && normalizedAdminWallet === normalized;
-  });
+export function isSystemAdmin(wallet = '') {
+  return normalizeWallet(wallet) === normalizeWallet(SYSTEM_ADMIN_WALLET);
 }
 
-export function findStoreByWallet(stores = [], wallet = '', access = roleAccessConfig) {
+export function findStoreByWallet(stores = [], wallet = '') {
   const normalized = normalizeWallet(wallet);
   if (!normalized) return null;
-
-  return stores.find(store => {
-    if (store.status === 'disabled') return false;
-    const entry = (access?.stores || []).find(item => item.storeSlug === store.slug || item.storeId === store.id);
-    if (!entry) return false;
-    const ownerWallet = entry.owner?.wallet;
-    const staffList = entry.staff || [];
-    const ownerMatch = normalizeWallet(ownerWallet) === normalized;
-    const staffMatch = staffList.some(member => normalizeWallet(member.wallet) === normalized && member.active !== false);
-    return ownerMatch || staffMatch;
-  }) || null;
+  return stores.find(store =>
+    store.status !== 'disabled' && normalizeWallet(store.ownerWallet) === normalized
+  ) || null;
 }
 
-export function resolveNetworkRole(stores = [], wallet = '', access = roleAccessConfig) {
-  if (isSystemAdmin(wallet, access)) {
+export function visibleStoresForWallet(stores = [], wallet = '') {
+  if (isSystemAdmin(wallet)) return stores;
+  const store = findStoreByWallet(stores, wallet);
+  return store ? [store] : [];
+}
+
+export function resolveNetworkRole(stores = [], wallet = '') {
+  if (isSystemAdmin(wallet)) {
     return {
       roleKey: 'system_admin',
       role: 'System Admin',
@@ -259,78 +129,50 @@ export function resolveNetworkRole(stores = [], wallet = '', access = roleAccess
     };
   }
 
-  const store = findStoreByWallet(stores, wallet, access);
+  const store = findStoreByWallet(stores, wallet);
   if (!store) {
-    return {
-      roleKey: 'guest',
-      role: 'Guest',
-      label: 'No store access',
-      store: null,
-      member: null,
-    };
-  }
-
-  const entry = (access?.stores || []).find(item => item.storeSlug === store.slug || item.storeId === store.id);
-  if (!entry) {
-    return {
-      roleKey: 'guest',
-      role: 'Guest',
-      label: 'No store access',
-      store: null,
-      member: null,
-    };
-  }
-
-  const ownerWallet = entry.owner?.wallet;
-  const ownerMatch = normalizeWallet(ownerWallet) === normalizeWallet(wallet);
-  const staffMember = (entry.staff || []).find(item => normalizeWallet(item.wallet) === normalizeWallet(wallet) && item.active !== false);
-  const member = ownerMatch
-    ? { name: entry?.owner?.name || `${store.name} Owner`, role: 'Owner', roleKey: 'owner', wallet, avatar: 'SO', active: true }
-    : staffMember
-      ? { name: staffMember.name, role: staffRoleLabel(staffMember.role), roleKey: staffMember.role || 'cashier', wallet, avatar: avatarFromName(staffMember.name), active: staffMember.active !== false }
-      : null;
-
-  if (!ownerMatch && !member) {
-    return {
-      roleKey: 'guest',
-      role: 'Guest',
-      label: 'No store access',
-      store: null,
-      member: null,
-    };
+    return { roleKey: 'guest', role: 'Guest', label: 'No store access', store: null, member: null };
   }
 
   return {
-    roleKey: ownerMatch ? 'store_owner' : member?.roleKey || 'cashier',
-    role: ownerMatch ? 'Store Owner' : member?.role || 'Cashier',
-    label: ownerMatch ? 'Store Owner: staff and inventory control' : 'Staff: POS access',
+    roleKey: 'store_owner',
+    role: 'Store Owner',
+    label: 'Store Owner: store operations',
     store,
-    member,
+    member: {
+      name: `${store.name} Owner`,
+      role: 'Store Owner',
+      roleKey: 'store_owner',
+      wallet: store.ownerWallet,
+      avatar: 'SO',
+      active: true,
+    },
   };
 }
 
 export function buildStoreState(store) {
+  const owner = {
+    name: `${store.name} Owner`,
+    role: 'Store Owner',
+    roleKey: 'store_owner',
+    wallet: store.ownerWallet,
+    avatar: 'SO',
+    active: true,
+  };
   return {
-    store: {
-      id: store.id,
-      name: store.name,
-      branch: store.branch,
-      network: 'Store payment network',
-      type: store.type,
-      status: store.status,
-    },
+    store: { id: store.id, name: store.name, branch: store.branch, network: 'Store payment network', type: store.type, status: store.status },
     settings: commonSettings,
-    receiverWallet: store.receiverWallet,
-    staff: store.staffMembers[0],
-    staffMembers: store.staffMembers,
+    receiverWallet: store.ownerWallet,
+    staff: owner,
+    staffMembers: [owner],
     categoryRows: [],
     categories: store.categories,
     products: store.products,
     customers: sharedCustomers,
-    orders: [],
+    orders: store.orders || [],
     payments: [],
     movements: [],
-    pointsHistory: [],
+    pointsHistory: store.pointsHistory || [],
     inventory: [],
     warehouses: store.warehouses || [{ id: `${store.id}-main`, name: 'Main Store', address: store.branch, status: 'active', active: true }],
     purchaseOrders: [],

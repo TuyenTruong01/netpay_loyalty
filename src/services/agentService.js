@@ -132,7 +132,7 @@ export async function runShoppingAgent({ prompt, store, cart = [], actorWallet }
     answer = 'APoint can be awarded for USDC on Arc, bank transfer, and cash after the order is confirmed paid. 1 APoint is stored as 100 units, so 3.81 USDC earns 381 APoint units.';
   } else if (includesAny(prompt, ['pay', 'wallet', 'usdc', 'bank', 'cash'])) {
     actionName = 'explain_payment';
-    answer = 'USDC on Arc requires a wallet and valid transaction confirmation. Bank transfer and cash orders stay awaiting confirmation until store owner or staff marks them paid.';
+    answer = 'USDC on Arc requires a wallet and valid transaction confirmation. Bank transfer and cash orders stay awaiting confirmation until the store owner marks them paid.';
   }
 
   const result = { answer, actionName };

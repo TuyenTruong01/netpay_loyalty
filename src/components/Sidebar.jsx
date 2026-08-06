@@ -8,7 +8,6 @@ import {
   Settings,
   Store,
   Users,
-  UserCog,
 } from 'lucide-react';
 
 function buildNavGroups() {
@@ -17,7 +16,6 @@ function buildNavGroups() {
       label: 'Main',
       items: [
         { key: 'admin', label: 'System Admin', icon: Building2, tag: 'HQ' },
-        { key: 'staff', label: 'Staff', icon: UserCog },
         { key: 'settings', label: 'Settings', icon: Settings },
       ],
     },
@@ -75,7 +73,7 @@ export default function Sidebar({
             <p>Access</p>
             <button type="button" className="nav-item active">
               <Users size={17} />
-              <span>No whitelist role</span>
+              <span>No store access</span>
             </button>
           </section>
         )}
