@@ -3,17 +3,161 @@ import EthereumProvider from '@walletconnect/ethereum-provider';
 let walletConnectProvider = null;
 let activeEvmProvider = null;
 
-export function getInjectedEthereum() {
-  if (typeof window === 'undefined') return null;
+function getInjectedProviders() {
+  if (typeof window === 'undefined') return [];
 
-  const eth = window.ethereum;
-  if (eth && Array.isArray(eth.providers)) {
-    const metamask = eth.providers.find((provider) => provider.isMetaMask);
-    const rabby = eth.providers.find((provider) => provider.isRabby);
-    return metamask || rabby || eth.providers[0] || eth;
+  const ethereum = window.ethereum;
+  if (!ethereum) return [];
+
+  const providers = Array.isArray(ethereum.providers)
+    ? ethereum.providers
+    : [ethereum];
+
+  // Some wallet extensions expose the same provider more than once.
+  return [...new Set(providers)].filter(
+    provider => provider && typeof provider.request === 'function'
+  );
+}
+
+function walletNameFromProvider(provider = {}) {
+  if (provider?.isRabby) return 'Rabby';
+  if (provider?.isCoinbaseWallet) return 'Coinbase Wallet';
+  if (provider?.isOkxWallet || provider?.isOKExWallet) return 'OKX Wallet';
+  if (provider?.isBraveWallet) return 'Brave Wallet';
+  if (provider?.isTrust || provider?.isTrustWallet) return 'Trust Wallet';
+  if (provider?.isPhantom) return 'Phantom';
+  if (provider?.isMetaMask) return 'MetaMask';
+  return 'Browser Wallet';
+}
+
+function walletIdFromProvider(provider = {}, index = 0) {
+  if (provider?.isRabby) return `rabby-${index}`;
+  if (provider?.isCoinbaseWallet) return `coinbase-${index}`;
+  if (provider?.isOkxWallet || provider?.isOKExWallet) return `okx-${index}`;
+  if (provider?.isBraveWallet) return `brave-${index}`;
+  if (provider?.isTrust || provider?.isTrustWallet) return `trust-${index}`;
+  if (provider?.isPhantom) return `phantom-${index}`;
+  if (provider?.isMetaMask) return `metamask-${index}`;
+  return `wallet-${index}`;
+}
+
+function browserWalletDescriptor(provider, index = 0, info = null) {
+  return {
+    id: info?.uuid || walletIdFromProvider(provider, index),
+    name: info?.name || walletNameFromProvider(provider),
+    icon: info?.icon || '',
+    rdns: info?.rdns || '',
+    provider,
+  };
+}
+
+function dedupeWalletDescriptors(wallets = []) {
+  const seenProviders = new Set();
+  const seenIds = new Set();
+
+  return wallets.filter(wallet => {
+    if (!wallet?.provider || typeof wallet.provider.request !== 'function') return false;
+    if (seenProviders.has(wallet.provider)) return false;
+
+    const idKey = `${wallet.rdns || ''}:${wallet.id || ''}`;
+    if (idKey !== ':' && seenIds.has(idKey)) return false;
+
+    seenProviders.add(wallet.provider);
+    if (idKey !== ':') seenIds.add(idKey);
+    return true;
+  });
+}
+
+export async function discoverInjectedWallets(timeoutMs = 140) {
+  if (typeof window === 'undefined') return [];
+
+  const discovered = getInjectedProviders().map((provider, index) =>
+    browserWalletDescriptor(provider, index)
+  );
+
+  // EIP-6963 is the modern multi-wallet discovery standard. It prevents one
+  // extension from overwriting window.ethereum and lets the user choose explicitly.
+  const announced = [];
+  const onAnnounce = event => {
+    const detail = event?.detail;
+    if (!detail?.provider) return;
+    announced.push(browserWalletDescriptor(detail.provider, announced.length, detail.info));
+  };
+
+  window.addEventListener('eip6963:announceProvider', onAnnounce);
+
+  try {
+    window.dispatchEvent(new Event('eip6963:requestProvider'));
+    await new Promise(resolve => window.setTimeout(resolve, timeoutMs));
+  } finally {
+    window.removeEventListener('eip6963:announceProvider', onAnnounce);
   }
 
-  return eth || walletConnectProvider;
+  const wallets = dedupeWalletDescriptors([...announced, ...discovered]);
+
+  const withStatus = await Promise.all(wallets.map(async wallet => ({
+    ...wallet,
+    accounts: await readProviderAccounts(wallet.provider),
+  })));
+
+  // Already-authorized wallets appear first, but NetPay never auto-selects one
+  // when the selector UI is being used.
+  return withStatus.sort((a, b) => {
+    const aAuthorized = a.accounts.length ? 0 : 1;
+    const bAuthorized = b.accounts.length ? 0 : 1;
+    if (aAuthorized !== bAuthorized) return aAuthorized - bAuthorized;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function providerPriority(provider) {
+  // Important: Rabby and some other wallets may also expose isMetaMask=true
+  // for compatibility, so exclude them from the MetaMask branch.
+  if (provider?.isRabby === true) return 10;
+  if (
+    provider?.isMetaMask === true &&
+    provider?.isRabby !== true &&
+    provider?.isCoinbaseWallet !== true
+  ) {
+    return 20;
+  }
+  if (provider?.isCoinbaseWallet === true) return 30;
+  return 100;
+}
+
+export function getInjectedEthereum() {
+  const providers = getInjectedProviders();
+
+  if (providers.length) {
+    return [...providers].sort(
+      (a, b) => providerPriority(a) - providerPriority(b)
+    )[0];
+  }
+
+  return walletConnectProvider;
+}
+
+async function selectInjectedEthereum() {
+  const providers = getInjectedProviders();
+
+  if (!providers.length) {
+    return null;
+  }
+
+  // First reuse a provider that already has permission for this site.
+  // This avoids asking the wrong extension when several wallets are injected.
+  for (const provider of providers) {
+    const accounts = await readProviderAccounts(provider);
+    if (accounts.length) {
+      return provider;
+    }
+  }
+
+  // No provider is authorized yet. Use a deterministic priority and, crucially,
+  // do not mistake Rabby for MetaMask just because it exposes isMetaMask=true.
+  return [...providers].sort(
+    (a, b) => providerPriority(a) - providerPriority(b)
+  )[0];
 }
 
 export function getActiveEvmProvider() {
@@ -199,10 +343,51 @@ async function requestWalletAccounts(ethereum) {
       return enabledAccounts;
     }
 
-    return waitForWalletConnectAccounts(ethereum);
+    const accounts = await waitForWalletConnectAccounts(ethereum);
+
+    if (!accounts.length) {
+      throw new Error('Wallet connected but no account is available.');
+    }
+
+    return accounts;
   }
 
-  return normalizeProviderAccounts(await ethereum.request({ method: 'eth_requestAccounts' }));
+  try {
+    const accounts = normalizeProviderAccounts(
+      await ethereum.request({ method: 'eth_requestAccounts' })
+    );
+
+    if (!accounts.length) {
+      throw new Error(
+        'Wallet did not provide an account. Unlock the wallet and select an account.'
+      );
+    }
+
+    return accounts;
+  } catch (error) {
+    // Keep the original provider error for debugging, but replace the common
+    // multi-wallet/no-account failure with a useful message for the user.
+    if (
+      error?.code === 4001 &&
+      /at least one account|no account/i.test(String(error?.message || ''))
+    ) {
+      const nextError = new Error(
+        'The selected browser wallet has no available account. Unlock it, create/select an account, or disable the unused wallet extension and try again.'
+      );
+      nextError.code = 'WALLET_NO_ACCOUNT';
+      nextError.cause = error;
+      throw nextError;
+    }
+
+    if (error?.code === 4001) {
+      const nextError = new Error('Wallet connection was rejected.');
+      nextError.code = 4001;
+      nextError.cause = error;
+      throw nextError;
+    }
+
+    throw error;
+  }
 }
 
 function chainSwitchError(chain, error) {
@@ -254,8 +439,12 @@ export async function ensureEvmChain(chain, ethereum = getInjectedEthereum()) {
   }
 }
 
-export async function connectEvmWallet(chain) {
-  let ethereum = getInjectedEthereum();
+export async function connectEvmWallet(chain, selectedWallet = null) {
+  let ethereum = selectedWallet?.provider || selectedWallet || null;
+
+  if (!ethereum) {
+    ethereum = await selectInjectedEthereum();
+  }
 
   if (!ethereum) {
     ethereum = await getWalletConnectProvider(chain);

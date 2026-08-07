@@ -3,6 +3,7 @@ import Header from './components/Header.jsx';
 import ProductModal from './components/ProductModal.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import StatusBanner from './components/StatusBanner.jsx';
+import WalletSelector from './components/WalletSelector.jsx';
 import BestSellersPage from './pages/BestSellersPage.jsx';
 import CustomerCheckoutPage from './pages/CustomerCheckoutPage.jsx';
 import CustomersPage from './pages/CustomersPage.jsx';
@@ -21,7 +22,7 @@ import StoreMobilePage from './pages/StoreMobilePage.jsx';
 import CustomerStorefrontPage from './pages/CustomerStorefrontPage.jsx';
 import ExplorePage from './pages/ExplorePage.jsx';
 import StoreMapPage from './pages/StoreMapPage.jsx';
-import { connectEvmWallet } from './services/evmWallet.js';
+import { connectEvmWallet, discoverInjectedWallets } from './services/evmWallet.js';
 import { getPaymentChain } from './chains/index.js';
 import {
   addWarehouseRecord,
@@ -178,6 +179,10 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [currentWallet, setCurrentWallet] = useState('');
+  const [walletSelectorOpen, setWalletSelectorOpen] = useState(false);
+  const [detectedWallets, setDetectedWallets] = useState([]);
+  const [walletDetecting, setWalletDetecting] = useState(false);
+  const [walletSelectorError, setWalletSelectorError] = useState('');
   const [dbMessage, setDbMessage] = useState('Frontend multi-store mode. Supabase schema can be connected after the UI is approved.');
 
   const [invoiceActive, setInvoiceActive] = useState(false);
@@ -633,15 +638,46 @@ export default function App() {
   }
 
 
-  async function handleConnectWallet() {
+  async function refreshWalletChoices() {
+    setWalletDetecting(true);
+    setWalletSelectorError('');
+
     try {
-      const wallet = await connectEvmWallet(getPaymentChain(connectChainCode(activeStore)));
+      const wallets = await discoverInjectedWallets();
+      setDetectedWallets(wallets);
+      return wallets;
+    } catch (error) {
+      console.error(error);
+      setDetectedWallets([]);
+      setWalletSelectorError(error.message || 'Cannot detect browser wallets.');
+      return [];
+    } finally {
+      setWalletDetecting(false);
+    }
+  }
+
+  async function handleConnectWallet() {
+    setWalletSelectorOpen(true);
+    await refreshWalletChoices();
+  }
+
+  async function handleSelectWallet(selectedWallet) {
+    setWalletSelectorError('');
+
+    try {
+      const wallet = await connectEvmWallet(
+        getPaymentChain(connectChainCode(activeStore)),
+        selectedWallet,
+      );
+
       setDemoMode(false);
       setCurrentWallet(wallet.address);
       setConnected(true);
+      setWalletSelectorOpen(false);
     } catch (error) {
       console.error(error);
-      alert(error.message || 'Cannot connect wallet.');
+      setWalletSelectorError(error.message || 'Cannot connect wallet.');
+      throw error;
     }
   }
 
@@ -1255,6 +1291,21 @@ export default function App() {
           {renderPage()}
         </div>
       </main>
+
+      <WalletSelector
+        open={walletSelectorOpen}
+        wallets={detectedWallets}
+        loading={walletDetecting}
+        error={walletSelectorError}
+        onClose={() => {
+          if (!walletDetecting) {
+            setWalletSelectorOpen(false);
+            setWalletSelectorError('');
+          }
+        }}
+        onRefresh={refreshWalletChoices}
+        onSelect={handleSelectWallet}
+      />
 
       {editingProduct && canManageStore && (
         <ProductModal
