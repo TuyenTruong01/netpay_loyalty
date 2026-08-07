@@ -22,7 +22,7 @@ import StoreMobilePage from './pages/StoreMobilePage.jsx';
 import CustomerStorefrontPage from './pages/CustomerStorefrontPage.jsx';
 import ExplorePage from './pages/ExplorePage.jsx';
 import StoreMapPage from './pages/StoreMapPage.jsx';
-import { connectEvmWallet, discoverInjectedWallets } from './services/evmWallet.js';
+import { connectEvmWallet, discoverInjectedWallets, walletConnectAvailable } from './services/evmWallet.js';
 import { getPaymentChain } from './chains/index.js';
 import {
   addWarehouseRecord,
@@ -1305,6 +1305,7 @@ export default function App() {
         }}
         onRefresh={refreshWalletChoices}
         onSelect={handleSelectWallet}
+        walletConnectEnabled={walletConnectAvailable()}
       />
 
       {editingProduct && canManageStore && (

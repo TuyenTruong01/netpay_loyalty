@@ -18,6 +18,7 @@ export default function WalletSelector({
   onClose,
   onRefresh,
   onSelect,
+  walletConnectEnabled = false,
 }) {
   const [connectingId, setConnectingId] = useState('');
 
@@ -50,7 +51,7 @@ export default function WalletSelector({
           <div>
             <div style={styles.eyebrow}>PAYNET LOYALTY</div>
             <h2 id="wallet-selector-title" style={styles.title}>Choose a wallet</h2>
-            <p style={styles.subtitle}>Select the browser wallet you want NetPay to use for this session.</p>
+            <p style={styles.subtitle}>Choose an injected browser wallet, or use WalletConnect on mobile.</p>
           </div>
           <button type="button" style={styles.closeButton} onClick={onClose} aria-label="Close wallet selector">×</button>
         </div>
@@ -82,7 +83,7 @@ export default function WalletSelector({
                   <span style={styles.walletText}>
                     <strong style={styles.walletName}>{wallet.name}</strong>
                     <span style={styles.walletMeta}>
-                      {account ? `Authorized · ${shortAddress(account)}` : 'Not connected to this site yet'}
+                      {account ? `Authorized · ${shortAddress(account)}` : 'Browser extension · not connected yet'}
                     </span>
                   </span>
                   <span style={styles.walletAction}>{isConnecting ? 'Connecting…' : 'Connect'}</span>
@@ -91,10 +92,29 @@ export default function WalletSelector({
             })
           ) : (
             <div style={styles.empty}>
-              <strong>No injected EVM wallet detected.</strong>
-              <span>Install or enable MetaMask, Rabby, Coinbase Wallet, OKX Wallet, or another EVM wallet, then refresh.</span>
+              <strong>No injected browser wallet detected.</strong>
+              <span>On iPhone/Android Safari or Chrome, use WalletConnect below.</span>
             </div>
           )}
+
+          <div style={styles.sectionLabel}>MOBILE / WALLET APP</div>
+          <button
+            type="button"
+            style={{ ...styles.walletButton, ...styles.walletConnectButton, ...(connectingId === 'walletconnect-mobile' ? styles.walletButtonBusy : {}) }}
+            onClick={() => choose({ id: 'walletconnect-mobile', name: 'WalletConnect', type: 'walletconnect' })}
+            disabled={Boolean(connectingId)}
+          >
+            <span style={{ ...styles.iconWrap, ...styles.walletConnectIcon }}>WC</span>
+            <span style={styles.walletText}>
+              <strong style={styles.walletName}>WalletConnect</strong>
+              <span style={styles.walletMeta}>Open MetaMask, Rabby, OKX, Trust Wallet, Coinbase Wallet, or another compatible mobile wallet.</span>
+            </span>
+            <span style={styles.walletAction}>
+              {connectingId === 'walletconnect-mobile'
+                ? 'Connecting…'
+                : (walletConnectEnabled ? 'Connect' : 'Setup required')}
+            </span>
+          </button>
         </div>
 
         <div style={styles.footer}>
@@ -104,7 +124,7 @@ export default function WalletSelector({
           <button type="button" style={styles.cancelButton} onClick={onClose} disabled={Boolean(connectingId)}>Cancel</button>
         </div>
 
-        <p style={styles.note}>NetPay only asks the wallet you select for account access. Other installed wallet extensions are ignored.</p>
+        <p style={styles.note}>Injected wallets are used on desktop. WalletConnect is the recommended path from Safari/Chrome on mobile.</p>
       </section>
     </div>
   );
@@ -133,12 +153,15 @@ const styles = {
     background: '#fef2f2', color: '#991b1b', fontSize: 12, lineHeight: 1.45,
   },
   list: { display: 'grid', gap: 9, marginTop: 16 },
+  sectionLabel: { marginTop: 8, fontSize: 10, fontWeight: 900, letterSpacing: '.08em', color: '#94a3b8' },
   walletButton: {
     width: '100%', display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) auto', alignItems: 'center', gap: 11,
     padding: 11, border: '1px solid #e2e8f0', borderRadius: 13, background: '#fff', color: '#0f172a',
     textAlign: 'left', cursor: 'pointer', transition: 'border-color .15s ease, background .15s ease',
   },
   walletButtonBusy: { background: '#f8fafc', borderColor: '#c4b5fd' },
+  walletConnectButton: { borderColor: '#c4b5fd', background: '#faf8ff' },
+  walletConnectIcon: { fontSize: 12, fontWeight: 900, color: '#5b35f5' },
   iconWrap: {
     width: 44, height: 44, borderRadius: 12, background: '#f1f5f9', display: 'grid', placeItems: 'center', overflow: 'hidden',
   },

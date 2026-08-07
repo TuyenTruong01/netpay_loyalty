@@ -1,6 +1,7 @@
 import EthereumProvider from '@walletconnect/ethereum-provider';
 
 let walletConnectProvider = null;
+let walletConnectChainId = null;
 let activeEvmProvider = null;
 
 function getInjectedProviders() {
@@ -199,42 +200,76 @@ function walletConnectProjectId() {
   return import.meta.env?.VITE_WALLETCONNECT_PROJECT_ID || '';
 }
 
+
+export function walletConnectAvailable() {
+  return Boolean(walletConnectProjectId());
+}
+
+export function getWalletConnectChoice() {
+  return {
+    id: 'walletconnect-mobile',
+    name: 'WalletConnect',
+    icon: '',
+    rdns: 'walletconnect',
+    type: 'walletconnect',
+    accounts: [],
+    description: 'Connect a mobile wallet such as MetaMask, Rabby, OKX Wallet, Trust Wallet, or Coinbase Wallet.',
+  };
+}
+
 async function getWalletConnectProvider(chain) {
+  assertChainReady(chain);
+
   const projectId = walletConnectProjectId();
 
   if (!projectId) {
-    throw new Error('WalletConnect projectId is missing. Set VITE_WALLETCONNECT_PROJECT_ID in .env.');
+    const error = new Error(
+      'WalletConnect is not configured yet. Add VITE_WALLETCONNECT_PROJECT_ID in Vercel Environment Variables, then redeploy.'
+    );
+    error.code = 'WALLETCONNECT_PROJECT_ID_MISSING';
+    throw error;
+  }
+
+  // Re-create the provider if NetPay changes to a different payment chain.
+  if (walletConnectProvider && walletConnectChainId !== chain.chainIdDecimal) {
+    try {
+      await walletConnectProvider.disconnect?.();
+    } catch {
+      // Ignore stale-session cleanup failures; a fresh provider is created below.
+    }
+    walletConnectProvider = null;
+    walletConnectChainId = null;
   }
 
   if (!walletConnectProvider) {
+    const rpcUrl = chain.rpcUrls?.[0];
+
     walletConnectProvider = await EthereumProvider.init({
       projectId,
       chains: [chain.chainIdDecimal],
       optionalChains: [chain.chainIdDecimal],
-      rpcMap: {
-        [chain.chainIdDecimal]: chain.rpcUrls?.[0],
-        },
-        showQrModal: true,
-        qrModalOptions: {
-          mobileWallets: [
-            {
-              id: 'metamask',
-              name: 'MetaMask',
-              links: {
-                native: 'metamask://',
-                universal: 'https://metamask.app.link',
-              },
-            },
-          ],
-          enableExplorer: true,
-        },
-        metadata: {
-          name: 'Paynet Loyalty Loyalty',
-          description: 'Paynet Loyalty USDC checkout',
+      rpcMap: rpcUrl ? { [chain.chainIdDecimal]: rpcUrl } : undefined,
+      showQrModal: true,
+      methods: [
+        'eth_sendTransaction',
+        'personal_sign',
+        'eth_signTypedData',
+        'eth_signTypedData_v4',
+        'wallet_switchEthereumChain',
+        'wallet_addEthereumChain',
+      ],
+      events: ['accountsChanged', 'chainChanged', 'connect', 'disconnect'],
+      metadata: {
+        name: 'Paynet Loyalty',
+        description: 'Paynet Loyalty USDC checkout',
         url: typeof window !== 'undefined' ? window.location.origin : 'https://paynet.local',
-        icons: typeof window !== 'undefined' ? [`${window.location.origin}/png/logo/paynet-logo.png`] : [],
+        icons: typeof window !== 'undefined'
+          ? [`${window.location.origin}/png/logo/paynet-logo.png`]
+          : [],
       },
     });
+
+    walletConnectChainId = chain.chainIdDecimal;
   }
 
   return walletConnectProvider;
@@ -440,9 +475,12 @@ export async function ensureEvmChain(chain, ethereum = getInjectedEthereum()) {
 }
 
 export async function connectEvmWallet(chain, selectedWallet = null) {
-  let ethereum = selectedWallet?.provider || selectedWallet || null;
+  const wantsWalletConnect = selectedWallet?.type === 'walletconnect';
+  let ethereum = wantsWalletConnect
+    ? await getWalletConnectProvider(chain)
+    : (selectedWallet?.provider || selectedWallet || null);
 
-  if (!ethereum) {
+  if (!ethereum && !selectedWallet) {
     ethereum = await selectInjectedEthereum();
   }
 
