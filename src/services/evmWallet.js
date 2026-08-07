@@ -197,9 +197,68 @@ function walletParams(chain) {
 }
 
 function walletConnectProjectId() {
-  return import.meta.env?.VITE_WALLETCONNECT_PROJECT_ID || '';
+  return String(import.meta.env?.VITE_WALLETCONNECT_PROJECT_ID || '').trim();
 }
 
+function isWalletConnectRelayError(error) {
+  const message = String(error?.message || error || '');
+  return /subscrib(?:e|ing).*failed|relay.*failed|socket.*closed|connection.*stalled|publish.*failed/i.test(message);
+}
+
+function clearWalletConnectStorage() {
+  if (typeof window === 'undefined') return;
+
+  const clearMatchingKeys = storage => {
+    if (!storage) return;
+
+    const keys = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && /^(wc@2:|walletconnect)|walletconnect/i.test(key)) {
+        keys.push(key);
+      }
+    }
+
+    keys.forEach(key => {
+      try {
+        storage.removeItem(key);
+      } catch {
+        // Ignore browser storage restrictions (private mode, blocked storage, etc.).
+      }
+    });
+  };
+
+  try {
+    clearMatchingKeys(window.localStorage);
+  } catch {}
+
+  try {
+    clearMatchingKeys(window.sessionStorage);
+  } catch {}
+}
+
+async function resetWalletConnectProvider({ clearStorage = false } = {}) {
+  const provider = walletConnectProvider;
+
+  walletConnectProvider = null;
+  walletConnectChainId = null;
+
+  if (activeEvmProvider === provider) {
+    activeEvmProvider = null;
+  }
+
+  if (provider) {
+    try {
+      await provider.disconnect?.();
+    } catch {
+      // A stale relay/session can make disconnect fail; continue with local cleanup.
+    }
+  }
+
+  if (clearStorage) {
+    clearWalletConnectStorage();
+  }
+}
 
 export function walletConnectAvailable() {
   return Boolean(walletConnectProjectId());
@@ -246,15 +305,18 @@ async function getWalletConnectProvider(chain) {
 
     walletConnectProvider = await EthereumProvider.init({
       projectId,
+      // Do not request the same chain as both required and optional. Some mobile
+      // wallets behave poorly when the WalletConnect namespace is duplicated.
       chains: [chain.chainIdDecimal],
-      optionalChains: [chain.chainIdDecimal],
       rpcMap: rpcUrl ? { [chain.chainIdDecimal]: rpcUrl } : undefined,
       showQrModal: true,
       methods: [
         'eth_sendTransaction',
         'personal_sign',
-        'eth_signTypedData',
         'eth_signTypedData_v4',
+      ],
+      optionalMethods: [
+        'eth_signTypedData',
         'wallet_switchEthereumChain',
         'wallet_addEthereumChain',
       ],
@@ -490,7 +552,38 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
 
   activeEvmProvider = ethereum;
 
-  const accounts = await requestWalletAccounts(ethereum);
+  let accounts;
+
+  try {
+    accounts = await requestWalletAccounts(ethereum);
+  } catch (error) {
+    // WalletConnect v2 can leave a stale relay topic/session in browser storage
+    // after a cancelled or interrupted mobile connection. The next attempt then
+    // fails with "Subscribing to <topic> failed" before a wallet can open.
+    // Clean only WalletConnect-owned keys and retry once with a fresh provider.
+    if (isWalletConnectProvider(ethereum) && isWalletConnectRelayError(error)) {
+      await resetWalletConnectProvider({ clearStorage: true });
+
+      try {
+        ethereum = await getWalletConnectProvider(chain);
+        activeEvmProvider = ethereum;
+        accounts = await requestWalletAccounts(ethereum);
+      } catch (retryError) {
+        if (isWalletConnectRelayError(retryError)) {
+          const nextError = new Error(
+            'WalletConnect could not reach its relay service. The stale session was reset, but the relay subscription still failed. Check the Reown Project ID/domain settings and your network, then try again.'
+          );
+          nextError.code = 'WALLETCONNECT_RELAY_FAILED';
+          nextError.cause = retryError;
+          throw nextError;
+        }
+        throw retryError;
+      }
+    } else {
+      throw error;
+    }
+  }
+
   const address = accounts?.[0];
 
   assertAddress(address, 'connected wallet');
