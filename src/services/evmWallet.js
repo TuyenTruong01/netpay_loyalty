@@ -303,29 +303,27 @@ async function getWalletConnectProvider(chain) {
   if (!walletConnectProvider) {
     const rpcUrl = chain.rpcUrls?.[0];
 
-    // Mobile wallets can fail to establish a WalletConnect session when a
-    // custom chain that is not installed yet is requested as the *required*
-    // namespace. Establish the session on a universally-supported EVM chain,
-    // advertise Arc as optional, then add/switch to Arc immediately after the
-    // account is approved.
-    const handshakeChainId = 1;
+    // Arc is the payment network, so request Arc in the WalletConnect
+    // session itself. Do not create the session on Ethereum mainnet and then
+    // try to mutate it to Arc afterwards: WalletConnect v2 namespaces are
+    // approved when the session is created, and a later chain switch cannot
+    // reliably add a chain that was not approved in that namespace.
     const rpcMap = rpcUrl
       ? { [chain.chainIdDecimal]: rpcUrl }
       : undefined;
 
     walletConnectProvider = await EthereumProvider.init({
       projectId,
-      chains: [handshakeChainId],
-      optionalChains: [chain.chainIdDecimal],
+      chains: [chain.chainIdDecimal],
       rpcMap,
       showQrModal: true,
       methods: [
         'eth_sendTransaction',
         'personal_sign',
+        'eth_signTypedData',
         'eth_signTypedData_v4',
       ],
       optionalMethods: [
-        'eth_signTypedData',
         'wallet_switchEthereumChain',
         'wallet_addEthereumChain',
       ],
@@ -354,6 +352,41 @@ function normalizeProviderAccounts(accounts) {
   if (Array.isArray(accounts)) return accounts;
   if (typeof accounts === 'string') return [accounts];
   return [];
+}
+
+function walletConnectAccountsForChain(ethereum, chain) {
+  if (!ethereum?.session || !chain?.chainIdDecimal) return [];
+
+  const target = String(chain.chainIdDecimal);
+  const namespaces = ethereum.session.namespaces || {};
+  const accounts = Object.values(namespaces)
+    .flatMap(namespace => normalizeProviderAccounts(namespace?.accounts))
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .filter(value => {
+      const parts = value.split(':');
+      return parts.length >= 3 && parts[0] === 'eip155' && parts[1] === target;
+    })
+    .map(value => value.split(':').pop())
+    .filter(isValidEvmAddress);
+
+  return [...new Set(accounts)];
+}
+
+function walletConnectSessionHasChain(ethereum, chain) {
+  if (!ethereum?.session || !chain?.chainIdDecimal) return false;
+
+  const targetCaip = `eip155:${chain.chainIdDecimal}`;
+  const namespaces = ethereum.session.namespaces || {};
+
+  return Object.values(namespaces).some(namespace => {
+    const chains = normalizeProviderAccounts(namespace?.chains);
+    const accounts = normalizeProviderAccounts(namespace?.accounts);
+    return (
+      chains.includes(targetCaip) ||
+      accounts.some(value => String(value).startsWith(`${targetCaip}:`))
+    );
+  });
 }
 
 async function readProviderAccounts(ethereum) {
@@ -406,7 +439,7 @@ export async function restoreEvmWalletConnection(chain) {
   };
 }
 
-function waitForWalletConnectAccounts(ethereum, timeoutMs = 45000) {
+function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
   return new Promise(resolve => {
     let settled = false;
     let pollTimer = null;
@@ -430,12 +463,7 @@ function waitForWalletConnectAccounts(ethereum, timeoutMs = 45000) {
       const direct = normalizeProviderAccounts(ethereum?.accounts);
       if (finish(direct)) return;
 
-      const sessionAccounts = Object.values(
-        ethereum?.session?.namespaces || {}
-      ).flatMap(namespace => normalizeProviderAccounts(namespace?.accounts))
-        .map(value => String(value).split(':').pop())
-        .filter(Boolean);
-
+      const sessionAccounts = walletConnectAccountsForChain(ethereum, chain);
       if (finish(sessionAccounts)) return;
 
       try {
@@ -486,7 +514,9 @@ function waitForWalletConnectAccounts(ethereum, timeoutMs = 45000) {
     pollTimer = window.setInterval(() => { void checkAccounts(); }, 750);
     timeoutTimer = window.setTimeout(async () => {
       if (settled) return;
-      const finalAccounts = await readProviderAccounts(ethereum);
+      const finalAccounts = chain
+        ? walletConnectAccountsForChain(ethereum, chain)
+        : await readProviderAccounts(ethereum);
       settled = true;
       cleanup();
       resolve(finalAccounts);
@@ -496,7 +526,7 @@ function waitForWalletConnectAccounts(ethereum, timeoutMs = 45000) {
   });
 }
 
-async function requestWalletAccounts(ethereum) {
+async function requestWalletAccounts(ethereum, chain = null) {
   if (isWalletConnectProvider(ethereum)) {
     // `enable()` opens the WalletConnect modal/deep-link and waits for approval.
     // On mobile, however, some wallets resolve before Safari has received the
@@ -508,16 +538,25 @@ async function requestWalletAccounts(ethereum) {
     } catch (error) {
       // If a session was actually established while Safari was backgrounded,
       // do not discard it just because enable() surfaced a transient error.
-      const existingAccounts = await readProviderAccounts(ethereum);
+      const existingAccounts = chain
+        ? walletConnectAccountsForChain(ethereum, chain)
+        : await readProviderAccounts(ethereum);
       if (!existingAccounts.length) throw error;
       enabledAccounts = existingAccounts;
     }
 
-    if (enabledAccounts.length) {
+    if (chain) {
+      const arcAccounts = walletConnectAccountsForChain(ethereum, chain);
+      if (arcAccounts.length) {
+        return arcAccounts;
+      }
+    }
+
+    if (enabledAccounts.length && !chain) {
       return enabledAccounts;
     }
 
-    const accounts = await waitForWalletConnectAccounts(ethereum);
+    const accounts = await waitForWalletConnectAccounts(ethereum, chain);
 
     if (!accounts.length) {
       const error = new Error(
@@ -704,6 +743,37 @@ export async function ensureEvmChain(chain, ethereum = getInjectedEthereum()) {
   }
 
   const targetHex = normalizeChainId(chain.chainIdHex);
+
+  if (isWalletConnectProvider(ethereum)) {
+    // For WalletConnect, Arc must already belong to the approved session.
+    // wallet_addEthereumChain cannot reliably expand an existing WC v2 session
+    // namespace, so fail clearly instead of hanging after mobile approval.
+    if (!walletConnectSessionHasChain(ethereum, chain)) {
+      const error = new Error(
+        `${chain.label} was not approved by the mobile wallet. Disconnect the WalletConnect session and connect again, then approve ${chain.label} when the wallet asks for the network.`
+      );
+      error.code = 'WALLETCONNECT_ARC_NOT_APPROVED';
+      throw error;
+    }
+
+    try {
+      await ethereum.setDefaultChain?.(chain.chainIdDecimal);
+    } catch {
+      // Session approval is authoritative; setDefaultChain is only provider sync.
+    }
+
+    const arcAccounts = walletConnectAccountsForChain(ethereum, chain);
+    if (!arcAccounts.length) {
+      const error = new Error(
+        `${chain.label} is present in the WalletConnect session, but the wallet did not expose an account for that network. Reconnect and approve the Arc account.`
+      );
+      error.code = 'WALLETCONNECT_ARC_ACCOUNT_MISSING';
+      throw error;
+    }
+
+    return true;
+  }
+
   const currentChain = await readProviderChainId(ethereum);
 
   if (currentChain === targetHex) {
@@ -783,7 +853,7 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
   let accounts;
 
   try {
-    accounts = await requestWalletAccounts(ethereum);
+    accounts = await requestWalletAccounts(ethereum, chain);
   } catch (error) {
     // WalletConnect v2 can leave a stale relay topic/session in browser storage
     // after a cancelled or interrupted mobile connection. The next attempt then
@@ -795,7 +865,7 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
       try {
         ethereum = await getWalletConnectProvider(chain);
         activeEvmProvider = ethereum;
-        accounts = await requestWalletAccounts(ethereum);
+        accounts = await requestWalletAccounts(ethereum, chain);
       } catch (retryError) {
         if (isWalletConnectRelayError(retryError)) {
           const nextError = new Error(
