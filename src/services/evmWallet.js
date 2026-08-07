@@ -303,12 +303,21 @@ async function getWalletConnectProvider(chain) {
   if (!walletConnectProvider) {
     const rpcUrl = chain.rpcUrls?.[0];
 
+    // Mobile wallets can fail to establish a WalletConnect session when a
+    // custom chain that is not installed yet is requested as the *required*
+    // namespace. Establish the session on a universally-supported EVM chain,
+    // advertise Arc as optional, then add/switch to Arc immediately after the
+    // account is approved.
+    const handshakeChainId = 1;
+    const rpcMap = rpcUrl
+      ? { [chain.chainIdDecimal]: rpcUrl }
+      : undefined;
+
     walletConnectProvider = await EthereumProvider.init({
       projectId,
-      // Do not request the same chain as both required and optional. Some mobile
-      // wallets behave poorly when the WalletConnect namespace is duplicated.
-      chains: [chain.chainIdDecimal],
-      rpcMap: rpcUrl ? { [chain.chainIdDecimal]: rpcUrl } : undefined,
+      chains: [handshakeChainId],
+      optionalChains: [chain.chainIdDecimal],
+      rpcMap,
       showQrModal: true,
       methods: [
         'eth_sendTransaction',
@@ -382,21 +391,16 @@ export async function restoreEvmWalletConnection(chain) {
 
   activeEvmProvider = ethereum;
 
-  let chainReady = true;
-  let chainError = null;
-
-  try {
-    await ensureEvmChain(chain, ethereum);
-  } catch (error) {
-    chainReady = false;
-    chainError = error;
-  }
+  // A connection is only considered successful after the wallet is on the
+  // payment network. If Arc is missing, ensureEvmChain asks the wallet to add it;
+  // if another network is active, it asks the wallet to switch to Arc.
+  await ensureEvmChain(chain, ethereum);
 
   return {
     address,
     chainId: chain.chainIdDecimal,
-    chainReady,
-    chainError,
+    chainReady: true,
+    chainError: null,
     network: chain.label,
     provider: ethereum,
   };
@@ -567,12 +571,129 @@ async function requestWalletAccounts(ethereum) {
 function chainSwitchError(chain, error) {
   const message = error?.message || 'Wallet could not switch networks automatically.';
   const nextError = new Error(
-    `${message} Please switch your wallet to ${chain.label} and return to this checkout.`
+    `${message} NetPay could not activate ${chain.label}. Please approve the add/switch network request in your wallet and return to NetPay.`
   );
 
   nextError.code = 'CHAIN_SWITCH_UNSUPPORTED';
   nextError.cause = error;
   return nextError;
+}
+
+function isUnknownChainError(error) {
+  const code = Number(error?.code);
+  const message = String(error?.message || error || '');
+
+  return (
+    code === 4902 ||
+    code === -32603 ||
+    /unknown chain|unrecognized chain|chain.*not (?:added|found|configured|supported)|network.*not (?:added|found|configured|supported)|add.*network|unsupported chain/i.test(message)
+  );
+}
+
+function normalizeChainId(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `0x${value.toString(16)}`.toLowerCase();
+  }
+
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return '';
+
+  if (text.startsWith('0x')) {
+    try {
+      return `0x${BigInt(text).toString(16)}`.toLowerCase();
+    } catch {
+      return text;
+    }
+  }
+
+  try {
+    return `0x${BigInt(text).toString(16)}`.toLowerCase();
+  } catch {
+    return text;
+  }
+}
+
+async function readProviderChainId(ethereum) {
+  try {
+    return normalizeChainId(
+      await ethereum.request({ method: 'eth_chainId' })
+    );
+  } catch {
+    return '';
+  }
+}
+
+function waitForTargetChain(ethereum, targetHex, timeoutMs = 15000) {
+  return new Promise(resolve => {
+    let settled = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+
+    const cleanup = () => {
+      if (pollTimer) window.clearInterval(pollTimer);
+      if (timeoutTimer) window.clearTimeout(timeoutTimer);
+      ethereum.removeListener?.('chainChanged', onChainChanged);
+      document?.removeEventListener?.('visibilitychange', onVisibilityChange);
+      window?.removeEventListener?.('focus', onFocus);
+      window?.removeEventListener?.('pageshow', onPageShow);
+    };
+
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const check = async () => {
+      if (settled) return;
+      const current = await readProviderChainId(ethereum);
+      if (current === targetHex) finish(true);
+    };
+
+    const onChainChanged = value => {
+      if (normalizeChainId(value) === targetHex) finish(true);
+    };
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        void check();
+      }
+    };
+    const onFocus = () => { void check(); };
+    const onPageShow = () => { void check(); };
+
+    ethereum.on?.('chainChanged', onChainChanged);
+    document?.addEventListener?.('visibilitychange', onVisibilityChange);
+    window?.addEventListener?.('focus', onFocus);
+    window?.addEventListener?.('pageshow', onPageShow);
+
+    pollTimer = window.setInterval(() => { void check(); }, 700);
+    timeoutTimer = window.setTimeout(() => finish(false), timeoutMs);
+    void check();
+  });
+}
+
+async function requestAddChain(chain, ethereum) {
+  await ethereum.request({
+    method: 'wallet_addEthereumChain',
+    params: [walletParams(chain)],
+  });
+}
+
+async function requestSwitchChain(chain, ethereum) {
+  await ethereum.request({
+    method: 'wallet_switchEthereumChain',
+    params: [{ chainId: chain.chainIdHex }],
+  });
+
+  // WalletConnect's EthereumProvider keeps a default CAIP chain internally.
+  // Keep it synchronized after the wallet accepts the switch when supported.
+  try {
+    await ethereum.setDefaultChain?.(chain.chainIdDecimal);
+  } catch {
+    // Not every provider implements setDefaultChain; the wallet RPC remains
+    // authoritative, so this is only a synchronization aid.
+  }
 }
 
 export async function ensureEvmChain(chain, ethereum = getInjectedEthereum()) {
@@ -582,35 +703,65 @@ export async function ensureEvmChain(chain, ethereum = getInjectedEthereum()) {
     throw new Error('No EVM wallet found. Please install MetaMask, Rabby, Coinbase Wallet, or another EVM wallet.');
   }
 
-  const currentChain = await ethereum.request({ method: 'eth_chainId' });
+  const targetHex = normalizeChainId(chain.chainIdHex);
+  const currentChain = await readProviderChainId(ethereum);
 
-  if (String(currentChain).toLowerCase() === chain.chainIdHex.toLowerCase()) {
+  if (currentChain === targetHex) {
     return true;
   }
 
-  try {
-    await ethereum.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: chain.chainIdHex }],
-    });
+  let switchError = null;
 
-    return true;
-  } catch (switchError) {
-    if (switchError?.code !== 4902) {
+  try {
+    await requestSwitchChain(chain, ethereum);
+  } catch (error) {
+    switchError = error;
+  }
+
+  if (switchError) {
+    // 4902 is the standard "unknown chain" error. Some mobile wallets wrap the
+    // same condition in -32603 or a generic unsupported-network message, so
+    // WalletConnect gets one safe add-network attempt for those cases too.
+    if (!isUnknownChainError(switchError) && !isWalletConnectProvider(ethereum)) {
       throw chainSwitchError(chain, switchError);
     }
 
     try {
-      await ethereum.request({
-        method: 'wallet_addEthereumChain',
-        params: [walletParams(chain)],
-      });
+      await requestAddChain(chain, ethereum);
     } catch (addError) {
-      throw chainSwitchError(chain, addError);
+      // A few wallets return "already added" as an error. In that case the
+      // following switch can still succeed, so only stop on a clearly rejected
+      // request from the user.
+      const message = String(addError?.message || '');
+      if (addError?.code === 4001 || /reject|denied|cancel/i.test(message)) {
+        throw chainSwitchError(chain, addError);
+      }
     }
 
-    return true;
+    try {
+      await requestSwitchChain(chain, ethereum);
+    } catch (secondSwitchError) {
+      throw chainSwitchError(chain, secondSwitchError);
+    }
   }
+
+  // iOS may background Safari while the wallet shows the add/switch prompt.
+  // Wait for the app to return and verify Arc is actually active before NetPay
+  // reports the wallet as connected.
+  const activated = await waitForTargetChain(ethereum, targetHex);
+
+  if (!activated) {
+    const finalChain = await readProviderChainId(ethereum);
+    if (finalChain !== targetHex) {
+      const error = new Error(
+        `${chain.label} was added, but the wallet did not activate it. Open the wallet, select ${chain.label}, then return to NetPay.`
+      );
+      error.code = 'CHAIN_NOT_ACTIVE';
+      throw error;
+    }
+  }
+
+  return true;
 }
 
 export async function connectEvmWallet(chain, selectedWallet = null) {
@@ -665,21 +816,16 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
 
   assertAddress(address, 'connected wallet');
 
-  let chainReady = true;
-  let chainError = null;
-
-  try {
-    await ensureEvmChain(chain, ethereum);
-  } catch (error) {
-    chainReady = false;
-    chainError = error;
-  }
+  // A connection is only considered successful after the wallet is on the
+  // payment network. If Arc is missing, ensureEvmChain asks the wallet to add it;
+  // if another network is active, it asks the wallet to switch to Arc.
+  await ensureEvmChain(chain, ethereum);
 
   return {
     address,
     chainId: chain.chainIdDecimal,
-    chainReady,
-    chainError,
+    chainReady: true,
+    chainError: null,
     network: chain.label,
     provider: ethereum,
   };
