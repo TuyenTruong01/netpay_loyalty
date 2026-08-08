@@ -280,7 +280,6 @@ async function getWalletConnectProvider(chain) {
   assertChainReady(chain);
 
   const projectId = walletConnectProjectId();
-
   if (!projectId) {
     const error = new Error(
       'WalletConnect is not configured yet. Add VITE_WALLETCONNECT_PROJECT_ID in Vercel Environment Variables, then redeploy.'
@@ -289,45 +288,28 @@ async function getWalletConnectProvider(chain) {
     throw error;
   }
 
-  // Re-create the provider if NetPay changes to a different payment chain.
   if (walletConnectProvider && walletConnectChainId !== chain.chainIdDecimal) {
-    try {
-      await walletConnectProvider.disconnect?.();
-    } catch {
-      // Ignore stale-session cleanup failures; a fresh provider is created below.
-    }
-    walletConnectProvider = null;
-    walletConnectChainId = null;
+    await resetWalletConnectProvider();
   }
 
   if (!walletConnectProvider) {
     const rpcUrl = chain.rpcUrls?.[0];
-
-    // Arc is the payment network, so request Arc in the WalletConnect
-    // session itself. Do not create the session on Ethereum mainnet and then
-    // try to mutate it to Arc afterwards: WalletConnect v2 namespaces are
-    // approved when the session is created, and a later chain switch cannot
-    // reliably add a chain that was not approved in that namespace.
-    const rpcMap = rpcUrl
-      ? { [chain.chainIdDecimal]: rpcUrl }
-      : undefined;
+    const rpcMap = rpcUrl ? { [chain.chainIdDecimal]: rpcUrl } : undefined;
 
     walletConnectProvider = await EthereumProvider.init({
       projectId,
-      chains: [chain.chainIdDecimal],
+      optionalChains: [chain.chainIdDecimal],
       rpcMap,
       showQrModal: true,
-      methods: [
+      optionalMethods: [
         'eth_sendTransaction',
         'personal_sign',
         'eth_signTypedData',
         'eth_signTypedData_v4',
-      ],
-      optionalMethods: [
         'wallet_switchEthereumChain',
         'wallet_addEthereumChain',
       ],
-      events: ['accountsChanged', 'chainChanged', 'connect', 'disconnect'],
+      optionalEvents: ['accountsChanged', 'chainChanged'],
       metadata: {
         name: 'Paynet Loyalty',
         description: 'Paynet Loyalty USDC checkout',
@@ -481,10 +463,6 @@ export async function restoreEvmWalletConnection(chain) {
 
   activeEvmProvider = ethereum;
 
-  // IMPORTANT: wallet approval and payment-network readiness are two separate
-  // states. On mobile, WalletConnect may already have an approved account while
-  // a custom-network add/switch request still needs another wallet interaction.
-  // Never discard a valid wallet connection just because Arc is not ready yet.
   let chainReady = false;
   let chainError = null;
 
@@ -505,148 +483,110 @@ export async function restoreEvmWalletConnection(chain) {
   };
 }
 
-function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 60000, getPendingAccounts = null) {
+function walletConnectApprovedAccounts(ethereum) {
+  const direct = normalizeProviderAccounts(ethereum?.accounts).filter(isValidEvmAddress);
+  if (direct.length) return [...new Set(direct)];
+
+  const sessionAccounts = walletConnectSessions(ethereum)
+    .flatMap(session => Object.values(session?.namespaces || {}))
+    .flatMap(namespace => normalizeProviderAccounts(namespace?.accounts))
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .map(value => {
+      const parts = value.split(':');
+      return parts.length >= 3 ? parts[parts.length - 1] : value;
+    })
+    .filter(isValidEvmAddress);
+
+  return [...new Set(sessionAccounts)];
+}
+
+function waitForWalletConnectResume(ethereum, timeoutMs = 15000) {
   return new Promise(resolve => {
     let settled = false;
-    let pollTimer = null;
-    let timeoutTimer = null;
-    let cleanup = () => {};
+    let timer = null;
+
+    const cleanup = () => {
+      if (timer) window.clearTimeout(timer);
+      ethereum.removeListener?.('accountsChanged', onAccountsChanged);
+      window?.removeEventListener?.('focus', onResume);
+      window?.removeEventListener?.('pageshow', onResume);
+      document?.removeEventListener?.('visibilitychange', onVisibility);
+    };
 
     const finish = accounts => {
-      const normalized = normalizeProviderAccounts(accounts).filter(isValidEvmAddress);
-      if (settled || !normalized.length) return false;
+      const valid = normalizeProviderAccounts(accounts).filter(isValidEvmAddress);
+      if (settled || !valid.length) return false;
       settled = true;
       cleanup();
       closeWalletConnectModal(ethereum);
-      resolve(normalized);
+      resolve(valid);
       return true;
     };
 
-    const checkAccounts = async () => {
+    const check = async () => {
       if (settled) return;
-
-      // 1) First inspect the approved WalletConnect session itself. On iOS this
-      // is often updated before provider.accounts / accountsChanged are replayed.
-      const sessionAccounts = walletConnectAccountsForChain(ethereum, chain);
-      if (finish(sessionAccounts)) return;
-
-      // 2) Accept accounts returned by enable() if that promise eventually
-      // resolves after Safari resumes.
+      if (finish(walletConnectApprovedAccounts(ethereum))) return;
       try {
-        const pending = typeof getPendingAccounts === 'function'
-          ? getPendingAccounts()
-          : [];
-        if (finish(pending)) return;
+        finish(await ethereum.request({ method: 'eth_accounts' }));
       } catch {}
-
-      // 3) Fall back to provider state and eth_accounts.
-      const direct = normalizeProviderAccounts(ethereum?.accounts);
-      if (finish(direct)) return;
-
-      try {
-        const requested = normalizeProviderAccounts(
-          await ethereum.request({ method: 'eth_accounts' })
-        );
-        finish(requested);
-      } catch {
-        // While the wallet app is foregrounded, Safari RPC calls can temporarily
-        // fail. Keep polling the session store until the browser resumes.
-      }
     };
 
     const onAccountsChanged = accounts => finish(accounts);
-    const onConnect = () => { void checkAccounts(); };
-    const onChainChanged = () => { void checkAccounts(); };
-    const onSessionEvent = () => { void checkAccounts(); };
-    const onSessionUpdate = () => { void checkAccounts(); };
-    const onSessionConnect = () => { void checkAccounts(); };
-    const onVisibilityChange = () => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        void checkAccounts();
-      }
-    };
-    const onFocus = () => { void checkAccounts(); };
-    const onPageShow = () => { void checkAccounts(); };
-
-    cleanup = () => {
-      if (pollTimer) window.clearInterval(pollTimer);
-      if (timeoutTimer) window.clearTimeout(timeoutTimer);
-      ethereum.removeListener?.('accountsChanged', onAccountsChanged);
-      ethereum.removeListener?.('connect', onConnect);
-      ethereum.removeListener?.('chainChanged', onChainChanged);
-      ethereum.removeListener?.('session_event', onSessionEvent);
-      ethereum.removeListener?.('session_update', onSessionUpdate);
-      ethereum.removeListener?.('session_connect', onSessionConnect);
-      document?.removeEventListener?.('visibilitychange', onVisibilityChange);
-      window?.removeEventListener?.('focus', onFocus);
-      window?.removeEventListener?.('pageshow', onPageShow);
+    const onResume = () => { void check(); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void check();
     };
 
     ethereum.on?.('accountsChanged', onAccountsChanged);
-    ethereum.on?.('connect', onConnect);
-    ethereum.on?.('chainChanged', onChainChanged);
-    ethereum.on?.('session_event', onSessionEvent);
-    ethereum.on?.('session_update', onSessionUpdate);
-    ethereum.on?.('session_connect', onSessionConnect);
-    document?.addEventListener?.('visibilitychange', onVisibilityChange);
-    window?.addEventListener?.('focus', onFocus);
-    window?.addEventListener?.('pageshow', onPageShow);
+    window?.addEventListener?.('focus', onResume);
+    window?.addEventListener?.('pageshow', onResume);
+    document?.addEventListener?.('visibilitychange', onVisibility);
 
-    // iOS may not replay any provider event after returning from the wallet app,
-    // so poll the SignClient session store as the source of truth.
-    pollTimer = window.setInterval(() => { void checkAccounts(); }, 500);
-    timeoutTimer = window.setTimeout(async () => {
+    timer = window.setTimeout(() => {
       if (settled) return;
-      const finalAccounts = walletConnectAccountsForChain(ethereum, chain);
       settled = true;
       cleanup();
-      if (finalAccounts.length) closeWalletConnectModal(ethereum);
-      resolve(finalAccounts);
+      resolve(walletConnectApprovedAccounts(ethereum));
     }, timeoutMs);
 
-    void checkAccounts();
+    void check();
   });
 }
 
 async function requestWalletAccounts(ethereum, chain = null) {
   if (isWalletConnectProvider(ethereum)) {
-    // Do NOT await enable() before watching the session. On iOS the deep-link
-    // hand-off can leave the enable promise pending even though MetaMask has
-    // already approved and SignClient already contains the session/account.
-    let enabledAccounts = [];
-    let enableError = null;
-
-    Promise.resolve()
-      .then(() => ethereum.enable())
-      .then(accounts => {
-        enabledAccounts = normalizeProviderAccounts(accounts);
-      })
-      .catch(error => {
-        enableError = error;
+    // Keep WalletConnect simple: create/approve one session first, then read the
+    // account from the provider/session after Safari returns from the wallet app.
+    if (!ethereum.session) {
+      await ethereum.connect({
+        optionalChains: chain?.chainIdDecimal ? [chain.chainIdDecimal] : undefined,
       });
-
-    const accounts = await waitForWalletConnectAccounts(
-      ethereum,
-      chain,
-      60000,
-      () => enabledAccounts
-    );
-
-    if (accounts.length) {
-      return accounts;
     }
 
-    // If approval never produced a session/account, surface the provider error
-    // when one exists; otherwise provide a precise mobile-resume message.
-    if (enableError) {
-      throw enableError;
+    let accounts = walletConnectApprovedAccounts(ethereum);
+    if (!accounts.length) {
+      try {
+        accounts = normalizeProviderAccounts(
+          await ethereum.request({ method: 'eth_accounts' })
+        ).filter(isValidEvmAddress);
+      } catch {}
     }
 
-    const error = new Error(
-      'The wallet was approved, but NetPay could not read the Arc account from the WalletConnect session. Return to Safari after approval, then reconnect once.'
-    );
-    error.code = 'WALLETCONNECT_ACCOUNT_TIMEOUT';
-    throw error;
+    if (!accounts.length) {
+      accounts = await waitForWalletConnectResume(ethereum);
+    }
+
+    if (!accounts.length) {
+      const error = new Error(
+        'WalletConnect session was approved, but NetPay did not receive an account. Return to NetPay after approval and try Connect Wallet once more.'
+      );
+      error.code = 'WALLETCONNECT_ACCOUNT_MISSING';
+      throw error;
+    }
+
+    closeWalletConnectModal(ethereum);
+    return accounts;
   }
 
   try {
@@ -964,10 +904,9 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
 
   assertAddress(address, 'connected wallet');
 
-  // IMPORTANT: wallet approval and payment-network readiness are two separate
-  // states. On mobile, WalletConnect may already have an approved account while
-  // a custom-network add/switch request still needs another wallet interaction.
-  // Never discard a valid wallet connection just because Arc is not ready yet.
+  // Wallet approval and Arc readiness are separate states. Return the address
+  // immediately once the session is approved, then let the UI show Switch to Arc
+  // when the payment network is not ready yet.
   let chainReady = false;
   let chainError = null;
 
