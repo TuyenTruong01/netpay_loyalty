@@ -22,7 +22,7 @@ import StoreMobilePage from './pages/StoreMobilePage.jsx';
 import CustomerStorefrontPage from './pages/CustomerStorefrontPage.jsx';
 import ExplorePage from './pages/ExplorePage.jsx';
 import StoreMapPage from './pages/StoreMapPage.jsx';
-import { connectEvmWallet, discoverInjectedWallets, walletConnectAvailable } from './services/evmWallet.js';
+import { connectEvmWallet, discoverInjectedWallets, ensureEvmChain, getActiveEvmProvider } from './services/evmWallet.js';
 import { getPaymentChain } from './chains/index.js';
 import {
   addWarehouseRecord,
@@ -183,6 +183,9 @@ export default function App() {
   const [detectedWallets, setDetectedWallets] = useState([]);
   const [walletDetecting, setWalletDetecting] = useState(false);
   const [walletSelectorError, setWalletSelectorError] = useState('');
+  const [walletNetworkReady, setWalletNetworkReady] = useState(false);
+  const [walletNetworkError, setWalletNetworkError] = useState('');
+  const [walletNetworkSwitching, setWalletNetworkSwitching] = useState(false);
   const [dbMessage, setDbMessage] = useState('Frontend multi-store mode. Supabase schema can be connected after the UI is approved.');
 
   const [invoiceActive, setInvoiceActive] = useState(false);
@@ -674,6 +677,11 @@ export default function App() {
       setCurrentWallet(wallet.address);
       setConnected(true);
       setWalletSelectorOpen(false);
+
+      // Wallet approval succeeded even if Arc still needs an add/switch action.
+      // Keep the wallet connected and surface the network state separately.
+      setWalletNetworkReady(Boolean(wallet.chainReady));
+      setWalletNetworkError(wallet.chainError?.message || '');
     } catch (error) {
       console.error(error);
       setWalletSelectorError(error.message || 'Cannot connect wallet.');
@@ -681,10 +689,38 @@ export default function App() {
     }
   }
 
+  async function handleSwitchPaymentNetwork() {
+    if (!connected || demoMode) return;
+
+    setWalletNetworkSwitching(true);
+    setWalletNetworkError('');
+
+    try {
+      const chain = getPaymentChain(connectChainCode(activeStore));
+      const provider = getActiveEvmProvider();
+
+      if (!provider) {
+        throw new Error('Wallet provider is no longer available. Reconnect the wallet.');
+      }
+
+      await ensureEvmChain(chain, provider);
+      setWalletNetworkReady(true);
+      setWalletNetworkError('');
+    } catch (error) {
+      console.error(error);
+      setWalletNetworkReady(false);
+      setWalletNetworkError(error.message || 'Cannot activate the payment network.');
+    } finally {
+      setWalletNetworkSwitching(false);
+    }
+  }
+
   function handleStartDemo() {
     setDemoMode(true);
     setConnected(true);
     setCurrentWallet(DEMO_WALLET_LABEL);
+    setWalletNetworkReady(true);
+    setWalletNetworkError('');
     setPage('pos');
     setSelectedStoreId(current => current || firstActiveStore(stores)?.id || '');
     setInvoiceActive(false);
@@ -699,6 +735,8 @@ export default function App() {
     setConnected(false);
     setDemoMode(false);
     setCurrentWallet('');
+    setWalletNetworkReady(false);
+    setWalletNetworkError('');
     setPage('admin');
     setInvoiceActive(false);
     setCart([]);
@@ -1287,6 +1325,57 @@ export default function App() {
           roleLabel={demoMode ? 'Demo Mode: local checkout preview' : roleContext.label}
         />
         <StatusBanner message={dbMessage} onReload={reloadNetwork} />
+
+        {connected && !demoMode && !walletNetworkReady && (
+          <div style={{
+            margin: '12px 20px 0',
+            padding: '12px 14px',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            borderRadius: 12,
+            background: 'rgba(245, 158, 11, 0.08)',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+          }}>
+            <div>
+              <strong>Wallet connected.</strong> Payment network is not ready yet.
+              {walletNetworkError && (
+                <div style={{ marginTop: 4, fontSize: 13, opacity: 0.8 }}>
+                  {walletNetworkError}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleSwitchPaymentNetwork}
+              disabled={walletNetworkSwitching}
+              style={{
+                border: 0,
+                borderRadius: 10,
+                padding: '9px 14px',
+                fontWeight: 700,
+                cursor: walletNetworkSwitching ? 'wait' : 'pointer',
+              }}
+            >
+              {walletNetworkSwitching ? 'Switching...' : 'Switch to Arc'}
+            </button>
+          </div>
+        )}
+
+        {connected && !demoMode && walletNetworkReady && (
+          <div style={{
+            margin: '12px 20px 0',
+            padding: '9px 14px',
+            borderRadius: 12,
+            background: 'rgba(34, 197, 94, 0.08)',
+            fontSize: 13,
+          }}>
+            Wallet connected · Arc payment network ready
+          </div>
+        )}
+
         <div className="content-shell">
           {renderPage()}
         </div>
@@ -1305,7 +1394,6 @@ export default function App() {
         }}
         onRefresh={refreshWalletChoices}
         onSelect={handleSelectWallet}
-        walletConnectEnabled={walletConnectAvailable()}
       />
 
       {editingProduct && canManageStore && (

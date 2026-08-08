@@ -481,16 +481,25 @@ export async function restoreEvmWalletConnection(chain) {
 
   activeEvmProvider = ethereum;
 
-  // A connection is only considered successful after the wallet is on the
-  // payment network. If Arc is missing, ensureEvmChain asks the wallet to add it;
-  // if another network is active, it asks the wallet to switch to Arc.
-  await ensureEvmChain(chain, ethereum);
+  // IMPORTANT: wallet approval and payment-network readiness are two separate
+  // states. On mobile, WalletConnect may already have an approved account while
+  // a custom-network add/switch request still needs another wallet interaction.
+  // Never discard a valid wallet connection just because Arc is not ready yet.
+  let chainReady = false;
+  let chainError = null;
+
+  try {
+    await ensureEvmChain(chain, ethereum);
+    chainReady = true;
+  } catch (error) {
+    chainError = error;
+  }
 
   return {
     address,
     chainId: chain.chainIdDecimal,
-    chainReady: true,
-    chainError: null,
+    chainReady,
+    chainError,
     network: chain.label,
     provider: ethereum,
   };
@@ -955,16 +964,25 @@ export async function connectEvmWallet(chain, selectedWallet = null) {
 
   assertAddress(address, 'connected wallet');
 
-  // A connection is only considered successful after the wallet is on the
-  // payment network. If Arc is missing, ensureEvmChain asks the wallet to add it;
-  // if another network is active, it asks the wallet to switch to Arc.
-  await ensureEvmChain(chain, ethereum);
+  // IMPORTANT: wallet approval and payment-network readiness are two separate
+  // states. On mobile, WalletConnect may already have an approved account while
+  // a custom-network add/switch request still needs another wallet interaction.
+  // Never discard a valid wallet connection just because Arc is not ready yet.
+  let chainReady = false;
+  let chainError = null;
+
+  try {
+    await ensureEvmChain(chain, ethereum);
+    chainReady = true;
+  } catch (error) {
+    chainError = error;
+  }
 
   return {
     address,
     chainId: chain.chainIdDecimal,
-    chainReady: true,
-    chainError: null,
+    chainReady,
+    chainError,
     network: chain.label,
     provider: ethereum,
   };
