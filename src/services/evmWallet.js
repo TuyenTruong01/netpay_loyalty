@@ -354,12 +354,50 @@ function normalizeProviderAccounts(accounts) {
   return [];
 }
 
+function walletConnectSessions(ethereum) {
+  const sessions = [];
+
+  if (ethereum?.session) {
+    sessions.push(ethereum.session);
+  }
+
+  // @walletconnect/ethereum-provider can update its internal SignClient session
+  // store before the top-level `provider.session` reference is refreshed after
+  // an iOS app hand-off. Read both locations so Safari can recover immediately
+  // after the user approves the connection in MetaMask/Rabby/OKX.
+  const stores = [
+    ethereum?.signer?.client?.session,
+    ethereum?.client?.session,
+  ].filter(Boolean);
+
+  for (const store of stores) {
+    try {
+      const values = typeof store.getAll === 'function'
+        ? store.getAll()
+        : (Array.isArray(store.values) ? store.values : []);
+      for (const session of values || []) {
+        if (session) sessions.push(session);
+      }
+    } catch {
+      // Session-store internals differ between WalletConnect versions.
+    }
+  }
+
+  const seen = new Set();
+  return sessions.filter(session => {
+    const key = session?.topic || session?.pairingTopic || JSON.stringify(session?.namespaces || {});
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function walletConnectAccountsForChain(ethereum, chain) {
-  if (!ethereum?.session || !chain?.chainIdDecimal) return [];
+  if (!chain?.chainIdDecimal) return [];
 
   const target = String(chain.chainIdDecimal);
-  const namespaces = ethereum.session.namespaces || {};
-  const accounts = Object.values(namespaces)
+  const accounts = walletConnectSessions(ethereum)
+    .flatMap(session => Object.values(session?.namespaces || {}))
     .flatMap(namespace => normalizeProviderAccounts(namespace?.accounts))
     .map(value => String(value || '').trim())
     .filter(Boolean)
@@ -374,19 +412,38 @@ function walletConnectAccountsForChain(ethereum, chain) {
 }
 
 function walletConnectSessionHasChain(ethereum, chain) {
-  if (!ethereum?.session || !chain?.chainIdDecimal) return false;
+  if (!chain?.chainIdDecimal) return false;
 
   const targetCaip = `eip155:${chain.chainIdDecimal}`;
-  const namespaces = ethereum.session.namespaces || {};
 
-  return Object.values(namespaces).some(namespace => {
-    const chains = normalizeProviderAccounts(namespace?.chains);
-    const accounts = normalizeProviderAccounts(namespace?.accounts);
-    return (
-      chains.includes(targetCaip) ||
-      accounts.some(value => String(value).startsWith(`${targetCaip}:`))
-    );
-  });
+  return walletConnectSessions(ethereum).some(session =>
+    Object.values(session?.namespaces || {}).some(namespace => {
+      const chains = normalizeProviderAccounts(namespace?.chains);
+      const accounts = normalizeProviderAccounts(namespace?.accounts);
+      return (
+        chains.includes(targetCaip) ||
+        accounts.some(value => String(value).startsWith(`${targetCaip}:`))
+      );
+    })
+  );
+}
+
+function closeWalletConnectModal(ethereum) {
+  // Best-effort only. Different versions expose the modal in different places.
+  const closers = [
+    () => ethereum?.modal?.closeModal?.(),
+    () => ethereum?.modal?.close?.(),
+    () => ethereum?.signer?.modal?.closeModal?.(),
+  ];
+
+  for (const close of closers) {
+    try {
+      const result = close();
+      if (result !== undefined) return;
+    } catch {
+      // The connection itself must not fail just because the modal API changed.
+    }
+  }
 }
 
 async function readProviderAccounts(ethereum) {
@@ -439,7 +496,7 @@ export async function restoreEvmWalletConnection(chain) {
   };
 }
 
-function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
+function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 60000, getPendingAccounts = null) {
   return new Promise(resolve => {
     let settled = false;
     let pollTimer = null;
@@ -447,10 +504,11 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
     let cleanup = () => {};
 
     const finish = accounts => {
-      const normalized = normalizeProviderAccounts(accounts);
+      const normalized = normalizeProviderAccounts(accounts).filter(isValidEvmAddress);
       if (settled || !normalized.length) return false;
       settled = true;
       cleanup();
+      closeWalletConnectModal(ethereum);
       resolve(normalized);
       return true;
     };
@@ -458,13 +516,23 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
     const checkAccounts = async () => {
       if (settled) return;
 
-      // WalletConnect may update `accounts` or the session namespace before
-      // emitting accountsChanged after the user returns from the wallet app.
-      const direct = normalizeProviderAccounts(ethereum?.accounts);
-      if (finish(direct)) return;
-
+      // 1) First inspect the approved WalletConnect session itself. On iOS this
+      // is often updated before provider.accounts / accountsChanged are replayed.
       const sessionAccounts = walletConnectAccountsForChain(ethereum, chain);
       if (finish(sessionAccounts)) return;
+
+      // 2) Accept accounts returned by enable() if that promise eventually
+      // resolves after Safari resumes.
+      try {
+        const pending = typeof getPendingAccounts === 'function'
+          ? getPendingAccounts()
+          : [];
+        if (finish(pending)) return;
+      } catch {}
+
+      // 3) Fall back to provider state and eth_accounts.
+      const direct = normalizeProviderAccounts(ethereum?.accounts);
+      if (finish(direct)) return;
 
       try {
         const requested = normalizeProviderAccounts(
@@ -472,8 +540,8 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
         );
         finish(requested);
       } catch {
-        // During the mobile hand-off the provider can temporarily reject RPC
-        // calls while the WalletConnect session is still settling. Keep waiting.
+        // While the wallet app is foregrounded, Safari RPC calls can temporarily
+        // fail. Keep polling the session store until the browser resumes.
       }
     };
 
@@ -481,6 +549,8 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
     const onConnect = () => { void checkAccounts(); };
     const onChainChanged = () => { void checkAccounts(); };
     const onSessionEvent = () => { void checkAccounts(); };
+    const onSessionUpdate = () => { void checkAccounts(); };
+    const onSessionConnect = () => { void checkAccounts(); };
     const onVisibilityChange = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         void checkAccounts();
@@ -496,6 +566,8 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
       ethereum.removeListener?.('connect', onConnect);
       ethereum.removeListener?.('chainChanged', onChainChanged);
       ethereum.removeListener?.('session_event', onSessionEvent);
+      ethereum.removeListener?.('session_update', onSessionUpdate);
+      ethereum.removeListener?.('session_connect', onSessionConnect);
       document?.removeEventListener?.('visibilitychange', onVisibilityChange);
       window?.removeEventListener?.('focus', onFocus);
       window?.removeEventListener?.('pageshow', onPageShow);
@@ -505,20 +577,21 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
     ethereum.on?.('connect', onConnect);
     ethereum.on?.('chainChanged', onChainChanged);
     ethereum.on?.('session_event', onSessionEvent);
+    ethereum.on?.('session_update', onSessionUpdate);
+    ethereum.on?.('session_connect', onSessionConnect);
     document?.addEventListener?.('visibilitychange', onVisibilityChange);
     window?.addEventListener?.('focus', onFocus);
     window?.addEventListener?.('pageshow', onPageShow);
 
-    // Polling is intentional here. iOS can suspend Safari while the wallet app
-    // is foregrounded, and not every wallet replays accountsChanged on return.
-    pollTimer = window.setInterval(() => { void checkAccounts(); }, 750);
+    // iOS may not replay any provider event after returning from the wallet app,
+    // so poll the SignClient session store as the source of truth.
+    pollTimer = window.setInterval(() => { void checkAccounts(); }, 500);
     timeoutTimer = window.setTimeout(async () => {
       if (settled) return;
-      const finalAccounts = chain
-        ? walletConnectAccountsForChain(ethereum, chain)
-        : await readProviderAccounts(ethereum);
+      const finalAccounts = walletConnectAccountsForChain(ethereum, chain);
       settled = true;
       cleanup();
+      if (finalAccounts.length) closeWalletConnectModal(ethereum);
       resolve(finalAccounts);
     }, timeoutMs);
 
@@ -528,45 +601,43 @@ function waitForWalletConnectAccounts(ethereum, chain, timeoutMs = 45000) {
 
 async function requestWalletAccounts(ethereum, chain = null) {
   if (isWalletConnectProvider(ethereum)) {
-    // `enable()` opens the WalletConnect modal/deep-link and waits for approval.
-    // On mobile, however, some wallets resolve before Safari has received the
-    // final account event. Always do a second, resilient wait after approval.
+    // Do NOT await enable() before watching the session. On iOS the deep-link
+    // hand-off can leave the enable promise pending even though MetaMask has
+    // already approved and SignClient already contains the session/account.
     let enabledAccounts = [];
+    let enableError = null;
 
-    try {
-      enabledAccounts = normalizeProviderAccounts(await ethereum.enable());
-    } catch (error) {
-      // If a session was actually established while Safari was backgrounded,
-      // do not discard it just because enable() surfaced a transient error.
-      const existingAccounts = chain
-        ? walletConnectAccountsForChain(ethereum, chain)
-        : await readProviderAccounts(ethereum);
-      if (!existingAccounts.length) throw error;
-      enabledAccounts = existingAccounts;
+    Promise.resolve()
+      .then(() => ethereum.enable())
+      .then(accounts => {
+        enabledAccounts = normalizeProviderAccounts(accounts);
+      })
+      .catch(error => {
+        enableError = error;
+      });
+
+    const accounts = await waitForWalletConnectAccounts(
+      ethereum,
+      chain,
+      60000,
+      () => enabledAccounts
+    );
+
+    if (accounts.length) {
+      return accounts;
     }
 
-    if (chain) {
-      const arcAccounts = walletConnectAccountsForChain(ethereum, chain);
-      if (arcAccounts.length) {
-        return arcAccounts;
-      }
+    // If approval never produced a session/account, surface the provider error
+    // when one exists; otherwise provide a precise mobile-resume message.
+    if (enableError) {
+      throw enableError;
     }
 
-    if (enabledAccounts.length && !chain) {
-      return enabledAccounts;
-    }
-
-    const accounts = await waitForWalletConnectAccounts(ethereum, chain);
-
-    if (!accounts.length) {
-      const error = new Error(
-        'Wallet approval completed, but NetPay did not receive an account from the WalletConnect session. Return to the browser after approving and try once more.'
-      );
-      error.code = 'WALLETCONNECT_ACCOUNT_TIMEOUT';
-      throw error;
-    }
-
-    return accounts;
+    const error = new Error(
+      'The wallet was approved, but NetPay could not read the Arc account from the WalletConnect session. Return to Safari after approval, then reconnect once.'
+    );
+    error.code = 'WALLETCONNECT_ACCOUNT_TIMEOUT';
+    throw error;
   }
 
   try {
@@ -582,8 +653,6 @@ async function requestWalletAccounts(ethereum, chain = null) {
 
     return accounts;
   } catch (error) {
-    // Keep the original provider error for debugging, but replace the common
-    // multi-wallet/no-account failure with a useful message for the user.
     if (
       error?.code === 4001 &&
       /at least one account|no account/i.test(String(error?.message || ''))
